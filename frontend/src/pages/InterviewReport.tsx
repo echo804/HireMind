@@ -2,6 +2,7 @@ import { useState, useEffect } from "react";
 import { useParams, Link } from "react-router-dom";
 import { api } from "../api/client";
 import { useToast } from "../contexts/ToastContext";
+import { DetailSkeleton } from "../components/Skeleton";
 
 interface ReportData {
   session_id: string; direction: string; total_questions: number;
@@ -109,6 +110,8 @@ function RingScore({ score }: { score: number }) {
     </div>
   );
 }
+
+import { DetailSkeleton } from "../components/Skeleton";
 
 export default function InterviewReport() {
   const { id } = useParams();

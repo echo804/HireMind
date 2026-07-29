@@ -27,7 +27,7 @@ def _http_status(code: int) -> int:
                 ErrorCode.INTERVIEW_SESSION_NOT_FOUND, ErrorCode.KNOWLEDGE_BASE_NOT_FOUND,
                 ErrorCode.SCHEDULE_NOT_FOUND, ErrorCode.VOICE_SESSION_NOT_FOUND):
         return 404
-    if code == ErrorCode.RESUME_DUPLICATE or code == ErrorCode.SCHEDULE_CONFLICT:
+    if code == ErrorCode.RESUME_DUPLICATE or code == ErrorCode.SCHEDULE_CONFLICT or code == ErrorCode.INTERVIEW_ALREADY_COMPLETED:
         return 409
     if code == ErrorCode.STORAGE_FILE_TOO_LARGE:
         return 413

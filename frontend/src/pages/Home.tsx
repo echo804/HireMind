@@ -3,6 +3,8 @@ import { useAuth } from "../contexts/AuthContext";
 import { Link } from "react-router-dom";
 import { api } from "../api/client";
 
+import { CardSkeleton } from "../components/Skeleton";
+
 export default function Home() {
   const { user } = useAuth();
   const [stats, setStats] = useState<Record<string, number>>({});

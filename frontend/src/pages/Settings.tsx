@@ -32,6 +32,8 @@ const DEFAULT_URLS: Record<string, string> = {
   openai: "https://api.openai.com/v1",
 };
 
+import { CardSkeleton } from "../components/Skeleton";
+
 export default function Settings() {
   const [settings, setSettings] = useState<SettingsData | null>(null);
   const [loading, setLoading] = useState(true);
