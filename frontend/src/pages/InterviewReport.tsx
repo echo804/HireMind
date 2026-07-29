@@ -111,7 +111,6 @@ function RingScore({ score }: { score: number }) {
   );
 }
 
-import { DetailSkeleton } from "../components/Skeleton";
 
 export default function InterviewReport() {
   const { id } = useParams();

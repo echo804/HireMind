@@ -8,6 +8,7 @@ from app.common.model.base import BaseModel
 
 class ResumeStatus(_StrEnum):
     PENDING = "pending"
+    PROCESSING = "processing"
     DONE = "done"
     FAILED = "failed"
 
@@ -31,6 +32,7 @@ class ResumeEntity(BaseModel):
     education: Mapped[list | None] = mapped_column(JSONB, nullable=True)
     summary: Mapped[str | None] = mapped_column(Text, nullable=True)
     score: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    progress: Mapped[int] = mapped_column(Integer, default=0)
 
     content_hash: Mapped[str | None] = mapped_column(String(64), nullable=True, index=True)
     status: Mapped[ResumeStatus] = mapped_column(Enum(ResumeStatus), default=ResumeStatus.PENDING)

@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback } from "react";
-import { Link } from "react-router-dom";
+import { Link, useNavigate } from "react-router-dom";
 import ConfirmDialog from "../components/ConfirmDialog";
 import { api } from "../api/client";
 
@@ -21,6 +21,7 @@ export default function ResumeList() {
   const [loading, setLoading] = useState(true);
   const [deleteId, setDeleteId] = useState<string | null>(null);
   const [search, setSearch] = useState("");
+  const navigate = useNavigate();
 
   const loadResumes = useCallback(async (query?: string) => {
     try {
@@ -41,8 +42,13 @@ export default function ResumeList() {
     try {
       const form = new FormData();
       form.append("file", file);
-      await api.upload("/resumes/upload", form);
-      await loadResumes();
+      const result = await api.upload<any>("/resumes/upload", form);
+      // 上传成功后自动跳转到详情页，触发 AI 分析并显示进度条
+      if (result?.id) {
+        navigate("/resumes/" + result.id);
+      } else {
+        await loadResumes();
+      }
     } finally {
       setUploading(false);
     }
@@ -67,7 +73,8 @@ export default function ResumeList() {
       }
     }
     if (status === "failed") return <span className="text-xs px-2 py-0.5 rounded-full bg-red-100 text-red-700">解析失败</span>;
-    return <span className="text-xs px-2 py-0.5 rounded-full bg-slate-100 text-slate-700">处理中</span>;
+    if (status === "processing") return <span className="text-xs px-2 py-0.5 rounded-full bg-blue-100 text-blue-700 animate-pulse">处理中...</span>;
+    return <span className="text-xs px-2 py-0.5 rounded-full bg-slate-100 text-slate-700">等待中</span>;
   };
 
   return (

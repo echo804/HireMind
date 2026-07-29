@@ -1,8 +1,12 @@
 #!/bin/bash
-set -e
 cd ~/HireMind
 
 echo "=== HireMind 一键启动 ==="
+
+# 0. 强制释放端口（解决 Address already in use）
+fuser -k 8000/tcp 2>/dev/null || true
+fuser -k 5173/tcp 2>/dev/null || true
+sleep 1
 
 # 1. PostgreSQL（已运行就跳过，避免 sudo 卡住）
 if systemctl is-active --quiet postgresql 2>/dev/null; then

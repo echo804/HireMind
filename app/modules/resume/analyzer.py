@@ -51,6 +51,7 @@ async def analyze_resume(text: str, user_id: str | None = None) -> dict[str, Any
     api_key = (config or {}).get("api_key") or settings.AI_BAILIAN_API_KEY or settings.DEEPSEEK_API_KEY or settings.OPENAI_API_KEY
     base_url = (config or {}).get("base_url") or settings.AI_BAILIAN_BASE_URL or settings.DEEPSEEK_BASE_URL or settings.OPENAI_BASE_URL
     model = (config or {}).get("model") or settings.AI_DEFAULT_MODEL or "deepseek-chat"
+    logger.info(f"analyze_resume: user_id={user_id}, model={model}, key_prefix={api_key[:10] if api_key else 'NONE'}, base_url={base_url}")
 
     if not api_key:
         return {"name": None, "email": None, "phone": None, "position": None,
@@ -62,6 +63,7 @@ async def analyze_resume(text: str, user_id: str | None = None) -> dict[str, Any
         api_key=api_key,
         base_url=base_url,
         temperature=0.1,
+        request_timeout=60,
     )
 
     prompt = ChatPromptTemplate.from_template(PROMPT)

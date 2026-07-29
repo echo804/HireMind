@@ -1,6 +1,7 @@
 import { useState, useEffect } from "react";
 import { useParams, Link } from "react-router-dom";
 import { api } from "../api/client";
+import { DetailSkeleton } from "../components/Skeleton";
 
 interface DocContent {
   id: string;

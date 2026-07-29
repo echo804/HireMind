@@ -6,8 +6,8 @@ from typing import Any
 class ResumeResponse(BaseModel):
     id: str
     filename: str
-    file_size: int
-    file_type: str
+    file_size: int | None = None
+    file_type: str | None = None
     name: str | None = None
     email: str | None = None
     phone: str | None = None
@@ -29,3 +29,22 @@ class ResumeListItem(BaseModel):
     score: int | None = None
     status: str
     created_at: datetime
+
+
+class ResumeDetail(BaseModel):
+    id: str
+    filename: str
+    file_size: int | None = None
+    file_type: str | None = None
+    name: str | None = None
+    email: str | None = None
+    phone: str | None = None
+    position: str | None = None
+    skills: list[Any] | None = None
+    experience: list[Any] | None = None
+    education: list[Any] | None = None
+    summary: str | None = None
+    score: int | None = None
+    progress: int = 0
+    status: str
+    created_at: str | None = None
