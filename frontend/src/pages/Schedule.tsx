@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback } from "react";
 import { api } from "../api/client";
-
+import { TableSkeleton } from "../components/Skeleton";
 interface ScheduleEvent {
   id: string;
   candidate_name: string;
@@ -41,7 +41,9 @@ function getWeekDates(date: Date) {
   return dates;
 }
 
-function formatDate(d: Date) { return d.toISOString().slice(0, 10); }
+function formatDate(d: Date) {
+  return d.getFullYear() + "-" + String(d.getMonth() + 1).padStart(2, "0") + "-" + String(d.getDate()).padStart(2, "0");
+}
 
 export default function Schedule() {
   const [events, setEvents] = useState<ScheduleEvent[]>([]);
