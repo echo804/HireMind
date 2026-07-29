@@ -16,7 +16,7 @@ export default function Layout() {
   const [menuOpen, setMenuOpen] = useState(false);
 
   const isActive = (path: string) =>
-    location.pathname.startsWith(path) ? "text-blue-600 border-b-2 border-blue-600" : "text-slate-600 hover:text-blue-600";
+    location.pathname.startsWith(path);
 
   if (location.pathname === "/login" || location.pathname === "/register") {
     return <Outlet />;
@@ -33,7 +33,7 @@ export default function Layout() {
             <nav className="hidden md:flex items-center gap-6">
               {navItems.map((item) => (
                 <Link key={item.path} to={item.path}
-                  className={"text-sm font-medium pb-1 transition-colors " + isActive(item.path)}>
+                  className={isActive(item.path) ? "text-sm font-medium pb-1 transition-colors text-blue-600 border-b-2 border-blue-600" : "text-sm font-medium pb-1 transition-colors text-slate-600 hover:text-blue-600"}>
                   {item.label}
                 </Link>
               ))}
@@ -66,7 +66,7 @@ export default function Layout() {
             <div className="max-w-6xl mx-auto px-4 py-3 flex flex-col gap-3">
               {navItems.map((item) => (
                 <Link key={item.path} to={item.path} onClick={() => setMenuOpen(false)}
-                  className={"text-sm font-medium py-1 " + isActive(item.path)}>
+                  className={isActive(item.path) ? "text-sm font-medium py-1 text-blue-600" : "text-sm font-medium py-1 text-slate-600 hover:text-blue-600"}>
                   {item.label}
                 </Link>
               ))}

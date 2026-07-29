@@ -1,5 +1,15 @@
 ﻿const API_BASE = "/api";
 
+function getToken(): string | null {
+  const saved = localStorage.getItem("user");
+  if (!saved) return null;
+  try {
+    return JSON.parse(saved).token || null;
+  } catch {
+    return null;
+  }
+}
+
 export class ApiError extends Error {
   constructor(
     public status: number,
@@ -15,12 +25,14 @@ async function request<T>(
   path: string,
   options: RequestInit = {},
 ): Promise<T> {
+  const token = getToken();
+  const isFormData = options.body instanceof FormData;
   const res = await fetch(`${API_BASE}${path}`, {
     headers: {
-      "Content-Type": "application/json",
+      ...(isFormData ? {} : { "Content-Type": "application/json" }),
+      ...(token ? { Authorization: `Bearer ${token}` } : {}),
       ...options.headers,
-    },
-    credentials: "include",
+    } as Record<string, string>,
     ...options,
   });
 
@@ -40,4 +52,13 @@ export const api = {
       method: "POST",
       body: data ? JSON.stringify(data) : undefined,
     }),
+  put: <T>(path: string, data?: unknown) =>
+    request<T>(path, {
+      method: "PUT",
+      body: data ? JSON.stringify(data) : undefined,
+    }),
+  delete: <T>(path: string) =>
+    request<T>(path, { method: "DELETE" }),
+  upload: <T>(path: string, formData: FormData) =>
+    request<T>(path, { method: "POST", body: formData }),
 };

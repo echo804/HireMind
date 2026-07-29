@@ -1,5 +1,6 @@
 import { useState, useEffect } from "react";
 import { useToast } from "../contexts/ToastContext";
+import { api } from "../api/client";
 import { Link } from "react-router-dom";
 
 interface KBDoc {
@@ -19,6 +20,8 @@ interface SearchResult {
   score: number;
   chunk_index: number;
 }
+
+import { CardSkeleton } from "../components/Skeleton";
 
 export default function KnowledgeBase() {
   const { toast } = useToast();
@@ -47,9 +50,8 @@ export default function KnowledgeBase() {
 
   const loadDocs = async () => {
     try {
-      const r = await fetch("/api/knowledge");
-      const b = await r.json();
-      if (b.code === 0) setDocs(b.data || []);
+      const data = await api.get<any>("/knowledge");
+      setDocs(data || []);
     } catch {
       toast("加载文档失败", "error");
     } finally {
@@ -66,16 +68,11 @@ export default function KnowledgeBase() {
     try {
       const form = new FormData();
       form.append("file", file);
-      const r = await fetch("/api/knowledge/upload", { method: "POST", body: form });
-      const b = await r.json();
-      if (b.code === 0) {
-        toast("上传成功", "success");
-        await loadDocs();
-      } else {
-        toast(b.message || "上传失败", "error");
-      }
-    } catch {
-      toast("上传失败", "error");
+      await api.upload("/knowledge/upload", form);
+      toast("上传成功", "success");
+      await loadDocs();
+    } catch (e: any) {
+      toast(e.message || "上传失败", "error");
     } finally {
       setUploading(false);
       e.target.value = "";
@@ -84,16 +81,11 @@ export default function KnowledgeBase() {
 
   const handleDelete = async (id: string) => {
     try {
-      const r = await fetch("/api/knowledge/" + id, { method: "DELETE" });
-      const b = await r.json();
-      if (b.code === 0) {
-        toast("文档已删除", "success");
-        await loadDocs();
-      } else {
-        toast(b.message || "删除失败", "error");
-      }
-    } catch {
-      toast("删除失败", "error");
+      await api.delete("/knowledge/" + id);
+      toast("文档已删除", "success");
+      await loadDocs();
+    } catch (e: any) {
+      toast(e.message || "删除失败", "error");
     }
   };
 
@@ -101,13 +93,8 @@ export default function KnowledgeBase() {
     if (!searchQuery.trim()) return;
     setSearching(true);
     try {
-      const r = await fetch("/api/knowledge/search", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ query: searchQuery, top_k: 5 }),
-      });
-      const b = await r.json();
-      if (b.code === 0) setSearchResults(b.data || []);
+      const data = await api.post<any>("/knowledge/search", { query: searchQuery, top_k: 5 });
+      setSearchResults(data || []);
     } catch {
       toast("搜索失败", "error");
     } finally {
@@ -122,9 +109,9 @@ export default function KnowledgeBase() {
   };
 
   const statusBadge = (status: string) => {
-    const s: Record<string, string> = { ready: "bg-green-100 text-green-700", processing: "bg-yellow-100 text-yellow-700", failed: "bg-red-100 text-red-700", pending: "bg-slate-100 text-slate-600" };
-    const l: Record<string, string> = { ready: "已完成", processing: "处理中", failed: "失败", pending: "待处理" };
-    return <span className={"text-xs px-2 py-0.5 rounded-full " + (s[status] || s.pending)}>{l[status] || status}</span>;
+    const styles: Record<string, string> = { ready: "text-xs px-2 py-0.5 rounded-full bg-green-100 text-green-700", processing: "text-xs px-2 py-0.5 rounded-full bg-yellow-100 text-yellow-700", failed: "text-xs px-2 py-0.5 rounded-full bg-red-100 text-red-700", pending: "text-xs px-2 py-0.5 rounded-full bg-slate-100 text-slate-600" };
+    const labels: Record<string, string> = { ready: "已完成", processing: "处理中", failed: "失败", pending: "待处理" };
+    return <span className={styles[status] || styles.pending}>{labels[status] || status}</span>;
   };
 
   const confirmDelete = async () => {
@@ -176,7 +163,7 @@ export default function KnowledgeBase() {
       {/* Category tabs */}
       <div className="flex flex-wrap gap-2 mb-4">
         <button onClick={() => setActiveCategory("all")}
-          className={"px-3 py-1.5 text-sm font-medium rounded-lg transition-colors " + (activeCategory === "all" ? "bg-blue-600 text-white" : "bg-white text-slate-600 hover:bg-slate-100 border border-slate-200")}>
+          className={activeCategory === "all" ? "px-3 py-1.5 text-sm font-medium rounded-lg bg-blue-600 text-white" : "px-3 py-1.5 text-sm font-medium rounded-lg bg-white text-slate-600 hover:bg-slate-100 border border-slate-200"}>
           全部 ({docs.length})
         </button>
         {Object.entries(CATEGORIES).map(([key, label]) => {
@@ -184,7 +171,7 @@ export default function KnowledgeBase() {
           if (count === 0) return null;
           return (
             <button key={key} onClick={() => setActiveCategory(key)}
-              className={"px-3 py-1.5 text-sm font-medium rounded-lg transition-colors " + (activeCategory === key ? "bg-blue-600 text-white" : "bg-white text-slate-600 hover:bg-slate-100 border border-slate-200")}>
+              className={activeCategory === key ? "px-3 py-1.5 text-sm font-medium rounded-lg bg-blue-600 text-white" : "px-3 py-1.5 text-sm font-medium rounded-lg bg-white text-slate-600 hover:bg-slate-100 border border-slate-200"}>
               {label} ({count})
             </button>
           );
@@ -193,7 +180,7 @@ export default function KnowledgeBase() {
 
       {/* Doc list */}
       {loading ? (
-        <div className="text-center py-12 text-slate-400">加载中...</div>
+        <CardSkeleton count={3} />
       ) : docs.length === 0 ? (
         <div className="text-center py-12 text-slate-400 bg-white rounded-xl shadow-sm">
           <p className="mb-2">暂无文档</p>

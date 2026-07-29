@@ -1,11 +1,14 @@
 import { useState, useEffect, useRef } from "react";
 import { useParams, useNavigate } from "react-router-dom";
+import { api } from "../api/client";
 
 interface QARecord {
   index: number;
   question: string;
   answer?: string;
 }
+
+import { ChatSkeleton } from "../components/Skeleton";
 
 export default function InterviewChat() {
   const { id } = useParams();
@@ -17,36 +20,37 @@ export default function InterviewChat() {
   const [answer, setAnswer] = useState("");
   const [sending, setSending] = useState(false);
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState("");
   const [finished, setFinished] = useState(false);
   const [ending, setEnding] = useState(false);
   const chatEnd = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
-    fetch("/api/interviews/" + id).then(r => r.json()).then(body => {
-      if (body.code === 0) {
-        const s = body.data;
-        setTotal(s.total_questions);
-        setCurrentIdx(s.current_question);
-        if (s.status === "completed") {
-          setFinished(true);
-        }
-        const qs = (s.questions_asked || []) as QARecord[];
-        const answers = (s.answers_given || []) as QARecord[];
-
-        const msgs: { role: "ai" | "user"; text: string }[] = [];
-        let nextQ = "";
-        for (const q of qs) {
-          msgs.push({ role: "ai", text: q.question });
-          const a = answers.find((x: QARecord) => x.index === q.index);
-          if (a && a.answer) {
-            msgs.push({ role: "user", text: a.answer });
-          } else {
-            nextQ = q.question;
-          }
-        }
-        setMessages(msgs);
-        if (nextQ) setCurrentQ(nextQ);
+    api.get<any>("/interviews/" + id).then(data => {
+      setTotal(data.total_questions);
+      setCurrentIdx(data.current_question);
+      if (data.status === "completed") {
+        setFinished(true);
       }
+      const qs = (data.questions_asked || []) as QARecord[];
+      const answers = (data.answers_given || []) as QARecord[];
+
+      const msgs: { role: "ai" | "user"; text: string }[] = [];
+      let nextQ = "";
+      for (const q of qs) {
+        msgs.push({ role: "ai", text: q.question });
+        const a = answers.find((x: QARecord) => x.index === q.index);
+        if (a && a.answer) {
+          msgs.push({ role: "user", text: a.answer });
+        } else {
+          nextQ = q.question;
+        }
+      }
+      setMessages(msgs);
+      if (nextQ) setCurrentQ(nextQ);
+      setLoading(false);
+    }).catch((e) => {
+      setError(e.message || "加载面试失败");
       setLoading(false);
     });
   }, [id]);
@@ -64,23 +68,17 @@ export default function InterviewChat() {
     setMessages(prev => [...prev, { role: "user", text: myAnswer }]);
 
     try {
-      const r = await fetch("/api/interviews/" + id + "/answer", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ answer: myAnswer }),
-      });
-      const b = await r.json();
-      if (b.code === 0) {
-        const data = b.data;
-        if (data.is_completed) {
-          setFinished(true);
-          setCurrentQ("");
-        } else {
-          setCurrentQ(data.question);
-          setCurrentIdx(data.question_index);
-          setMessages(prev => [...prev, { role: "ai", text: data.question }]);
-        }
+      const data = await api.post<any>("/interviews/" + id + "/answer", { answer: myAnswer });
+      if (data.is_completed) {
+        setFinished(true);
+        setCurrentQ("");
+      } else {
+        setCurrentQ(data.question);
+        setCurrentIdx(data.question_index);
+        setMessages(prev => [...prev, { role: "ai", text: data.question }]);
       }
+    } catch (e: any) {
+      setMessages(prev => [...prev, { role: "ai", text: "抱歉，处理你的回答时出现了问题，请重试。" }]);
     } finally {
       setSending(false);
     }
@@ -89,14 +87,23 @@ export default function InterviewChat() {
   const handleEnd = async () => {
     setEnding(true);
     try {
-      await fetch("/api/interviews/" + id + "/end", { method: "POST" });
+      await api.post("/interviews/" + id + "/end");
+      navigate("/interviews/" + id + "/report");
+    } catch (e: any) {
+      // still navigate to report even if end request fails
       navigate("/interviews/" + id + "/report");
     } finally {
       setEnding(false);
     }
   };
 
-  if (loading) return <div className="text-center py-12 text-slate-400">加载中...</div>;
+  if (loading) return <ChatSkeleton />;
+  if (error) return (
+    <div className="text-center py-12">
+      <p className="text-red-500 mb-4">{error}</p>
+      <button onClick={() => window.location.reload()} className="text-blue-600 hover:underline">重试</button>
+    </div>
+  );
 
   if (finished) {
     return (
@@ -112,17 +119,18 @@ export default function InterviewChat() {
     );
   }
 
+  const aiBubble = "bg-white shadow-sm text-slate-800";
+  const userBubble = "bg-blue-600 text-white";
+  const aiLabel = "text-slate-400";
+  const userLabel = "text-blue-200";
+
   return (
     <div className="flex flex-col h-[calc(100vh-12rem)]">
       <div className="flex-1 overflow-y-auto space-y-4 mb-4">
         {messages.map((msg, i) => (
-          <div key={i} className={"flex " + (msg.role === "user" ? "justify-end" : "justify-start")}>
-            <div className={"max-w-[75%] rounded-xl p-4 " + (
-              msg.role === "user"
-                ? "bg-blue-600 text-white"
-                : "bg-white shadow-sm text-slate-800"
-            )}>
-              <p className={"text-xs mb-1 " + (msg.role === "user" ? "text-blue-200" : "text-slate-400")}>
+          <div key={i} className={msg.role === "user" ? "flex justify-end" : "flex justify-start"}>
+            <div className={"max-w-[75%] rounded-xl p-4 " + (msg.role === "user" ? userBubble : aiBubble)}>
+              <p className={"text-xs mb-1 " + (msg.role === "user" ? userLabel : aiLabel)}>
                 {msg.role === "user" ? "你" : "AI 面试官"}
               </p>
               <p className="text-sm">{msg.text}</p>
@@ -131,6 +139,15 @@ export default function InterviewChat() {
         ))}
 
         <div ref={chatEnd} />
+
+        {currentQ && !finished && (
+          <div className="flex justify-start">
+            <div className="max-w-[75%] rounded-xl p-4 bg-white shadow-sm text-slate-800 animate-pulse">
+              <p className="text-xs mb-1 text-slate-400">AI 面试官</p>
+              <p className="text-sm">{currentQ}</p>
+            </div>
+          </div>
+        )}
       </div>
 
       <div className="flex items-center justify-between mb-2">

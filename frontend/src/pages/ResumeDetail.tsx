@@ -1,5 +1,6 @@
 import { useState, useEffect } from "react";
 import { useParams, Link } from "react-router-dom";
+import { api } from "../api/client";
 
 interface ResumeData {
   id: string; filename: string; file_size: number; file_type: string;
@@ -10,19 +11,29 @@ interface ResumeData {
   summary: string | null; score: number | null; status: string; created_at: string;
 }
 
+import { DetailSkeleton } from "../components/Skeleton";
+
 export default function ResumeDetail() {
   const { id } = useParams();
   const [resume, setResume] = useState<ResumeData | null>(null);
   const [loading, setLoading] = useState(true);
+  const [_error, setError] = useState<string | null>(null);
 
-  useEffect(() => {
-    fetch("/api/resumes/" + id).then(r => r.json()).then(body => {
-      if (body.code === 0) setResume(body.data);
+  useEffect(function poll() {
+    api.get<any>("/resumes/" + id).then(data => {
+      setResume(data);
+      if (data.status === "done") {
+        setLoading(false);
+      } else {
+        setTimeout(poll, 2000);
+      }
+    }).catch((e: any) => {
+      setError(e.message || "获取简历信息失败");
       setLoading(false);
     });
   }, [id]);
 
-  if (loading) return <div className="text-center py-12 text-slate-400">加载中...</div>;
+  if (loading) return <DetailSkeleton />;
   if (!resume) return <div className="text-center py-12 text-slate-400">简历不存在</div>;
 
   return (

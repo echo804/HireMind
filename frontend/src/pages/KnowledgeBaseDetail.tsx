@@ -1,5 +1,6 @@
 import { useState, useEffect } from "react";
 import { useParams, Link } from "react-router-dom";
+import { api } from "../api/client";
 
 interface DocContent {
   id: string;
@@ -15,9 +16,8 @@ export default function KnowledgeBaseDetail() {
   useEffect(() => {
     (async () => {
       try {
-        const r = await fetch(`/api/knowledge/${id}/content`);
-        const b = await r.json();
-        if (b.code === 0) setDoc(b.data);
+        const data = await api.get<any>(`/knowledge/${id}/content`);
+        setDoc(data);
       } finally {
         setLoading(false);
       }
@@ -31,7 +31,7 @@ export default function KnowledgeBaseDetail() {
       </div>
 
       {loading ? (
-        <div className="text-center py-12 text-slate-400">加载中...</div>
+        <DetailSkeleton />
       ) : !doc ? (
         <div className="text-center py-12 text-red-400">文档不存在</div>
       ) : (

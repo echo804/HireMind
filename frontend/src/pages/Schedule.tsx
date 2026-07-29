@@ -1,4 +1,5 @@
 import { useState, useEffect, useCallback } from "react";
+import { api } from "../api/client";
 
 interface ScheduleEvent {
   id: string;
@@ -48,6 +49,7 @@ export default function Schedule() {
   const [currentWeek, setCurrentWeek] = useState(new Date());
   const [showForm, setShowForm] = useState(false);
   const [editEvent, setEditEvent] = useState<ScheduleEvent | null>(null);
+  const [deleteTarget, setDeleteTarget] = useState<string | null>(null);
   const [form, setForm] = useState({
     candidate_name: "",
     candidate_email: "",
@@ -63,10 +65,9 @@ export default function Schedule() {
 
   const loadEvents = useCallback(async () => {
     try {
-      const r = await fetch(`/api/schedule/range?start=${weekStart.toISOString()}&end=${new Date(weekEnd.getFullYear(), weekEnd.getMonth(), weekEnd.getDate(), 23, 59, 59).toISOString()}`);
-      const b = await r.json();
-      if (b.code === 0) setEvents(b.data || []);
-    } finally { setLoading(false); }
+      const data = await api.get<any>(`/schedule/range?start=${weekStart.toISOString()}&end=${new Date(weekEnd.getFullYear(), weekEnd.getMonth(), weekEnd.getDate(), 23, 59, 59).toISOString()}`);
+      setEvents(data || []);
+    } catch { /* ignore */ } finally { setLoading(false); }
   }, [weekStart, weekEnd]);
 
   useEffect(() => { loadEvents(); }, [loadEvents]);
@@ -95,25 +96,22 @@ export default function Schedule() {
   };
 
   const handleSave = async () => {
-    const url = editEvent ? `/api/schedule/${editEvent.id}` : "/api/schedule";
-    const method = editEvent ? "PUT" : "POST";
-    await fetch(url, {
-      method, headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(editEvent ? form : { ...form, scheduled_at: form.scheduled_at + ":00+08:00" }),
-    });
+    if (editEvent) {
+      await api.put(`/schedule/${editEvent.id}`, form);
+    } else {
+      await api.post("/schedule", { ...form, scheduled_at: form.scheduled_at + ":00+08:00" });
+    }
     setShowForm(false);
     await loadEvents();
   };
 
   const handleDelete = async (id: string) => {
-    await fetch(`/api/schedule/${id}`, { method: "DELETE" });
+    await api.delete(`/schedule/${id}`);
+    await loadEvents();
   };
 
-
   const handleStatusChange = async (id: string, status: string) => {
-    await fetch(`/api/schedule/${id}`, {
-      body: JSON.stringify({ status }),
-    });
+    await api.put(`/schedule/${id}`, { status });
     await loadEvents();
   };
 
@@ -145,15 +143,13 @@ export default function Schedule() {
           {["一", "二", "三", "四", "五", "六", "日"].map((d, i) => (
             <div key={d} className="p-3 text-center border-r border-slate-100 last:border-r-0">
               <p className="text-xs text-slate-400">{d}</p>
-              <p className={"text-lg font-semibold mt-1 " + (
-                formatDate(weekDates[i]) === formatDate(today) ? "text-blue-600" : "text-slate-800"
-              )}>{weekDates[i].getDate()}</p>
+              <p className={formatDate(weekDates[i]) === formatDate(today) ? "text-lg font-semibold mt-1 text-blue-600" : "text-lg font-semibold mt-1 text-slate-800"}>{weekDates[i].getDate()}</p>
             </div>
           ))}
         </div>
 
         {loading ? (
-          <div className="text-center py-12 text-slate-400">加载中...</div>
+          <TableSkeleton rows={4} />
         ) : (
           <div className="grid grid-cols-7 min-h-[300px]">
             {weekDates.map((d, i) => {
@@ -196,7 +192,7 @@ export default function Schedule() {
                     ))}
                   </select>
                   <button onClick={() => openEdit(e)} className="text-xs text-blue-500 hover:underline">编辑</button>
-                  <button onClick={() => handleDelete(e.id)} className="text-xs text-red-400 hover:text-red-600">删除</button>
+                  <button onClick={() => setDeleteTarget(e.id)} className="text-xs text-red-400 hover:text-red-600">删除</button>
                 </div>
               </div>
             ))}
@@ -248,6 +244,31 @@ export default function Schedule() {
             <div className="flex justify-end gap-3 mt-6">
               <button onClick={() => setShowForm(false)} className="px-4 py-2 text-sm text-slate-600 bg-slate-100 rounded-lg hover:bg-slate-200">取消</button>
               <button onClick={handleSave} className="px-4 py-2 text-sm text-white bg-blue-600 rounded-lg hover:bg-blue-700">{editEvent ? "保存" : "创建"}</button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Delete confirmation modal */}
+      {deleteTarget !== null && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40">
+          <div className="bg-white rounded-xl shadow-xl p-6 w-80">
+            <h3 className="text-lg font-semibold text-slate-800 mb-2">确认删除</h3>
+            <p className="text-sm text-slate-500 mb-6">确定要删除该日程吗？此操作不可撤销。</p>
+            <div className="flex justify-end gap-3">
+              <button onClick={() => setDeleteTarget(null)}
+                className="px-4 py-2 text-sm text-slate-600 bg-slate-100 rounded-lg hover:bg-slate-200 transition-colors">
+                取消
+              </button>
+              <button onClick={async () => {
+                if (deleteTarget) {
+                  await handleDelete(deleteTarget);
+                  setDeleteTarget(null);
+                }
+              }}
+                className="px-4 py-2 text-sm text-white bg-red-500 rounded-lg hover:bg-red-600 transition-colors">
+                确定删除
+              </button>
             </div>
           </div>
         </div>

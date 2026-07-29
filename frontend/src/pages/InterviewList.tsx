@@ -1,5 +1,6 @@
 import { useState, useEffect, useCallback } from "react";
 import { useNavigate } from "react-router-dom";
+import { api } from "../api/client";
 
 interface ResumeItem {
   id: string;
@@ -35,6 +36,8 @@ const STATUS_MAP: Record<string, string> = {
   pending: "待开始", in_progress: "进行中", completed: "已完成", cancelled: "已取消",
 };
 
+import { CardSkeleton } from "../components/Skeleton";
+
 export default function InterviewList() {
   const navigate = useNavigate();
   const [sessions, setSessions] = useState<InterviewItem[]>([]);
@@ -49,18 +52,14 @@ export default function InterviewList() {
 
   const load = useCallback(async () => {
     try {
-      const [sRes, rRes] = await Promise.all([
-        fetch("/api/interviews"),
-        fetch("/api/resumes"),
+      const [sessionsData, resumesData] = await Promise.all([
+        api.get<any>("/interviews"),
+        api.get<any>("/resumes"),
       ]);
-      const sBody = await sRes.json();
-      const rBody = await rRes.json();
-      if (sBody.code === 0) setSessions(sBody.data || []);
-      if (rBody.code === 0) {
-        const list = (rBody.data || []).filter((r: ResumeItem) => r.name);
-        setResumes(list);
-        if (list.length > 0) setResumeId(list[0].id);
-      }
+      setSessions(sessionsData || []);
+      const list = (resumesData || []).filter((r: ResumeItem) => r.name);
+      setResumes(list);
+      if (list.length > 0) setResumeId(list[0].id);
     } finally { setLoading(false); }
   }, []);
 
@@ -83,17 +82,14 @@ export default function InterviewList() {
   };
 
   const handleDelete = async (id: string) => {
-    await fetch("/api/interviews/" + id, { method: "DELETE" });
+    await api.delete("/interviews/" + id);
     setSelected(prev => { const n = new Set(prev); n.delete(id); return n; });
     await load();
   };
 
   const handleBatchDelete = async () => {
     if (selected.size === 0) return;
-    await fetch("/api/interviews/batch-delete", {
-      method: "POST", headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ids: Array.from(selected)}),
-    });
+    await api.post("/interviews/batch-delete", { ids: Array.from(selected) });
     setSelected(new Set());
     await load();
   };
@@ -101,20 +97,20 @@ export default function InterviewList() {
   const startInterview = async () => {
     setCreating(true);
     try {
-      const r = await fetch("/api/interviews", {
-        method: "POST", headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          resume_id: resumeId || null,
-          direction,
-          interview_type: "text",
-          total_questions: totalQ,
-          use_knowledge: useKnowledge,
-        }),
+      const data = await api.post<any>("/interviews", {
+        resume_id: resumeId || null,
+        direction,
+        interview_type: "text",
+        total_questions: totalQ,
+        use_knowledge: useKnowledge,
       });
-      const b = await r.json();
-      if (b.code === 0 && b.data?.id) {
-        navigate("/interviews/" + b.data.id);
+      if (data?.id) {
+        navigate("/interviews/" + data.id);
+      } else {
+        alert("创建面试失败，请重试");
       }
+    } catch {
+      alert("网络错误，请检查后端是否运行");
     } finally { setCreating(false); }
   };
 
@@ -125,7 +121,7 @@ export default function InterviewList() {
       completed: "bg-green-100 text-green-600",
       cancelled: "bg-red-100 text-red-600",
     };
-    return <span className={"text-xs px-2 py-0.5 rounded-full " + (colors[status] || "")}>{STATUS_MAP[status] || status}</span>;
+    return <span className={`text-xs px-2 py-0.5 rounded-full ${colors[status] || ""}`}>{STATUS_MAP[status] || status}</span>;
   };
 
   return (
@@ -185,7 +181,7 @@ export default function InterviewList() {
       </div>
 
       {loading ? (
-        <div className="text-center py-8 text-slate-400">加载中...</div>
+        <TableSkeleton rows={4} />
       ) : sessions.length === 0 ? (
         <div className="text-center py-8 text-slate-400">还没有面试记录</div>
       ) : (

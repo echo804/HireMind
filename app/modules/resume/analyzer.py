@@ -40,34 +40,29 @@ Resume text:
 ---"""
 
 
-async def analyze_resume(text: str, llm=None) -> dict[str, Any]:
-    """Analyze resume text using LLM and return structured result"""
+async def analyze_resume(text: str, user_id: str | None = None) -> dict[str, Any]:
+    """Analyze resume text using LLM and return structured result.
+    
+    Uses user's AI config when user_id is provided, falls back to .env settings."""
     from app.config.settings import settings
+    from app.modules.settings.service import get_active_config
 
-    if llm is None:
-        if settings.AI_BAILIAN_API_KEY:
-            llm = ChatOpenAI(
-                model=settings.AI_DEFAULT_MODEL,
-                api_key=settings.AI_BAILIAN_API_KEY,
-                base_url=settings.AI_BAILIAN_BASE_URL,
-                temperature=0.1,
-            )
-        elif settings.DEEPSEEK_API_KEY:
-            llm = ChatOpenAI(
-                model="deepseek-chat",
-                api_key=settings.DEEPSEEK_API_KEY,
-                base_url=settings.DEEPSEEK_BASE_URL,
-                temperature=0.1,
-            )
-        elif settings.OPENAI_API_KEY:
-            llm = ChatOpenAI(
-                model="gpt-4o-mini",
-                api_key=settings.OPENAI_API_KEY,
-                temperature=0.1,
-            )
-        else:
-            return {"name": None, "email": None, "phone": None, "position": None,
-                    "skills": [], "experience": [], "education": [], "summary": "No AI provider configured", "score": 50}
+    config = get_active_config(user_id) if user_id else None
+    api_key = (config or {}).get("api_key") or settings.AI_BAILIAN_API_KEY or settings.DEEPSEEK_API_KEY or settings.OPENAI_API_KEY
+    base_url = (config or {}).get("base_url") or settings.AI_BAILIAN_BASE_URL or settings.DEEPSEEK_BASE_URL or settings.OPENAI_BASE_URL
+    model = (config or {}).get("model") or settings.AI_DEFAULT_MODEL or "deepseek-chat"
+
+    if not api_key:
+        return {"name": None, "email": None, "phone": None, "position": None,
+                "skills": [], "experience": [], "education": [],
+                "summary": "No AI provider configured", "score": 50}
+
+    llm = ChatOpenAI(
+        model=model,
+        api_key=api_key,
+        base_url=base_url,
+        temperature=0.1,
+    )
 
     prompt = ChatPromptTemplate.from_template(PROMPT)
     chain = prompt | llm

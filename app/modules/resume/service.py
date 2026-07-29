@@ -58,7 +58,7 @@ class ResumeService:
                 await self.repo.save(created)
                 return self._to_response(created)
 
-            analysis = await analyze_resume(text)
+            analysis = await analyze_resume(text, user_id=user_id)
             created.name = analysis.get("name")
             created.email = analysis.get("email")
             created.phone = analysis.get("phone")
@@ -74,12 +74,17 @@ class ResumeService:
             logger.error(f"Resume analysis failed: {e}")
             created.status = ResumeStatus.FAILED
             created.summary = f"Analysis failed: {str(e)[:200]}"
+            save_path.unlink(missing_ok=True)
+            raise
 
         await self.repo.save(created)
         return self._to_response(created)
 
-    async def list_resumes(self, user_id: str) -> list[ResumeListItem]:
-        entities = await self.repo.find_by_user(uuid.UUID(user_id))
+    async def list_resumes(self, user_id: str, query: str | None = None) -> list[ResumeListItem]:
+        if query:
+            entities = await self.repo.search(uuid.UUID(user_id), query)
+        else:
+            entities = await self.repo.find_by_user(uuid.UUID(user_id))
         return [self._to_list_item(e) for e in entities]
 
     async def get_resume(self, resume_id: str, user_id: str) -> ResumeResponse:

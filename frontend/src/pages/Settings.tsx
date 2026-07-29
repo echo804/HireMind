@@ -1,4 +1,5 @@
 import { useState, useEffect } from "react";
+import { api } from "../api/client";
 
 const PROVIDERS = [
   { value: "bailian", label: "阿里云百炼 (DashScope)" },
@@ -38,10 +39,9 @@ export default function Settings() {
   const [saved, setSaved] = useState(false);
 
   useEffect(() => {
-    fetch("/api/settings").then(r => r.json()).then(body => {
-      if (body.code === 0) setSettings(body.data);
-      setLoading(false);
-    });
+    api.get<any>("/settings").then(data => {
+      setSettings(data);
+    }).catch(() => {}).finally(() => setLoading(false));
   }, []);
 
   const update = (key: string, value: string) => {
@@ -54,13 +54,11 @@ export default function Settings() {
     setSaving(true);
     setSaved(false);
     try {
-      await fetch("/api/settings", {
-        method: "PUT",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(settings),
-      });
+      await api.put("/settings", settings);
       setSaved(true);
       setTimeout(() => setSaved(false), 2000);
+    } catch {
+      // error surfaced by api client
     } finally {
       setSaving(false);
     }
@@ -81,7 +79,7 @@ export default function Settings() {
     setSettings(updated);
   };
 
-  if (loading) return <div className="text-center py-12 text-slate-400">加载中...</div>;
+  if (loading) return <CardSkeleton count={1} />;
   if (!settings) return <div className="text-center py-12 text-slate-400">无法加载配置</div>;
 
   const provider = settings.provider;
@@ -100,11 +98,10 @@ export default function Settings() {
           <div className="flex flex-wrap gap-2">
             {PROVIDERS.map(p => (
               <button key={p.value} onClick={() => switchProvider(p.value)}
-                className={"px-4 py-2 text-sm rounded-lg transition-colors " + (
-                  provider === p.value
-                    ? "bg-blue-600 text-white"
-                    : "bg-slate-100 text-slate-600 hover:bg-slate-200"
-                )}>
+                className={provider === p.value
+                    ? "px-4 py-2 text-sm rounded-lg transition-colors bg-blue-600 text-white"
+                    : "px-4 py-2 text-sm rounded-lg transition-colors bg-slate-100 text-slate-600 hover:bg-slate-200"
+                }>
                 {p.label}
               </button>
             ))}
@@ -145,9 +142,10 @@ export default function Settings() {
         </div>
 
         <button onClick={handleSave} disabled={saving}
-          className={"w-full py-2.5 text-white font-medium rounded-lg transition-colors " + (
-            saved ? "bg-green-600" : "bg-blue-600 hover:bg-blue-700"
-          )}>
+          className={saved
+            ? "w-full py-2.5 text-white font-medium rounded-lg transition-colors bg-green-600"
+            : "w-full py-2.5 text-white font-medium rounded-lg transition-colors bg-blue-600 hover:bg-blue-700"
+          }>
           {saving ? "保存中..." : saved ? "已保存" : "保存配置"}
         </button>
       </div>
