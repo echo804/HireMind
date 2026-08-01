@@ -1,5 +1,6 @@
 import { useState } from "react";
 import { useNavigate, Link } from "react-router-dom";
+import { motion } from "framer-motion";
 import { useAuth } from "../contexts/AuthContext";
 
 export default function Login() {
@@ -21,7 +22,13 @@ export default function Login() {
   };
 
   return (
-    <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-surface-muted to-surface-muted">
+    <motion.div
+      initial={{ opacity: 0, y: 16 }}
+      animate={{ opacity: 1, y: 0 }}
+      exit={{ opacity: 0, y: -16 }}
+      transition={{ duration: 0.35, ease: [0.22, 1, 0.36, 1] }}
+      className="min-h-screen flex items-center justify-center bg-gradient-to-br from-surface-muted to-surface-muted"
+    >
       <div className="w-full max-w-md bg-white rounded-2xl shadow-lg p-8">
         <h1 className="text-2xl font-bold text-center text-ink mb-8">
           登录 HireMind
@@ -52,6 +59,6 @@ export default function Login() {
           <Link to="/register" className="text-brand-600 hover:underline">立即注册</Link>
         </p>
       </div>
-    </div>
+    </motion.div>
   );
 }

@@ -79,6 +79,7 @@
 
   /* 字体 */
   --font-sans: "Inter", "PingFang SC", "Microsoft YaHei", system-ui, sans-serif;
+  --font-display: "Space Grotesk", "Inter", "PingFang SC", "Microsoft YaHei", system-ui, sans-serif;
 }
 ```
 
@@ -99,7 +100,7 @@
 
 | 层级 | 规格 | 用途 |
 |---|---|---|
-| Display | `text-5xl~7xl font-bold tracking-tight` | 品牌名 HireMind（欢迎页） |
+| Display | `font-display text-5xl~7xl font-bold tracking-tight`（Space Grotesk） | 品牌名 HireMind（欢迎页） |
 | 页面标题 | `text-2xl font-semibold tracking-tight` | 「简历管理」「模拟面试」等 |
 | 功能名 | `text-lg font-semibold tracking-wide` | 卡片标题、导航强调项 |
 | 正文 | `text-sm/base font-normal text-ink-secondary leading-relaxed` | 描述、内容 |
@@ -118,7 +119,8 @@
 
 - 过渡：`transition-all duration-150~300 ease-out`
 - hover/active：卡片 `-translate-y-0.5 + shadow-card-hover`；按钮沿用 `btn-primary` 现有（hover 变色、`active:scale-[0.98]`）
-- 欢迎页拼写：`useTypewriter`（见 §5），只播一次，光标 `animate-blink`
+- 欢迎页编排：`framer-motion` 字母 stagger 上浮 + blur 清晰 + 字距舒展 + 渐变文字，只播一次（见 §5）；业务页禁止循环动画
+- 页面过渡：欢迎页 ↔ 登录/注册 用 `AnimatePresence mode="wait"`（App.tsx），退出渐隐上移模糊 / 进入渐显上浮（0.35s ease）
 - 全局降级：
 
 ```css
@@ -136,14 +138,15 @@
 
 ## 4. 页面应用规范
 
-### 4.1 欢迎页（登录前首页 `/`）
+### 4.1 欢迎页（登录前首页 `/`）v2
 
-- **结构**：独立全屏，不套 `Layout` 外壳（复用 `Layout.tsx:22-24` 对 `/login`、`/register` 的放行机制；`App.tsx` 拆分 `/` 未登录分支）
-- **背景**：`bg-paper` 纯色 + 极淡蓝光晕（`radial-gradient(600px 300px at 50% 40%, rgb(37 99 235 / 0.05), transparent 70%)`）
-- **中央**：`HireMind` 动态拼写（Display 层级 `text-5xl md:text-7xl font-bold tracking-tight text-brand-700 select-none`）+ blink 光标
-- **副语**：蓝色小字 `text-sm md:text-base text-brand-500 tracking-wide mt-6`，一句话介绍，如「让每一次面试，都有备而来」
-- **时序**：`startDelay 400ms` → `speed 80ms/字` → `done` 后副语与 CTA（登录 / 注册，`btn-primary` / `btn-secondary`）以 `opacity 300ms` 淡入
-- **降级**：`prefers-reduced-motion` 时直接全显，无动画
+- **结构**：独立全屏，不套 `Layout` 外壳（`Layout.tsx` 对 `/` 未登录放行）；路由过渡 `AnimatePresence`（App.tsx）
+- **背景**：`bg-paper` 纯色 + 极淡蓝光晕
+- **品牌字**：`font-display`（Space Grotesk 600/700）+ 渐变（`from-brand-700 via-brand-500 to-brand-300` + `bg-clip-text text-transparent`）+ 字母逐字 stagger 上浮（opacity/y/blur 错峰 0.07s）+ 字距 `-0.06em → -0.02em` 舒展 + 光标 `animate-blink`（编排完成前）
+- **副语**：`text-brand-500 tracking-wide`，「让每一次面试，都有备而来」
+- **时序**：字母编排 ≈1.4s → 副语/CTA 在 1.75s 错峰淡入（opacity+y 0.6s）
+- **退出**：路由离开时整页 `opacity 0 + y -16 + blur(6px)` 0.35s
+- **降级**：`prefers-reduced-motion` 全直显无动画
 - **响应式**：字号降级、CTA 全宽（移动端）
 
 ### 4.2 登录后功能页
@@ -236,10 +239,10 @@ export default function Welcome() {
 
 ```bash
 cd frontend
-npm install lucide-react@^1.28.0 @fontsource/inter@^5.3.0
+npm install lucide-react@^1.28.0 @fontsource/inter@^5.3.0 framer-motion @fontsource/space-grotesk
 ```
 
-`main.tsx` 引入字体：`import "@fontsource/inter/400.css"; import "@fontsource/inter/500.css"; import "@fontsource/inter/600.css"; import "@fontsource/inter/700.css";`
+`main.tsx` 引入字体：`@fontsource/inter/400-700.css` + `@fontsource/space-grotesk/600/700.css`；页面过渡与欢迎页编排用 `framer-motion`（`motion/react` 同源）。
 
 ---
 

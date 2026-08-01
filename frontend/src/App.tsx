@@ -1,4 +1,5 @@
-import { BrowserRouter, Routes, Route, Navigate, Outlet } from "react-router-dom";
+import { BrowserRouter, Routes, Route, Navigate, Outlet, useLocation } from "react-router-dom";
+import { AnimatePresence } from "framer-motion";
 import { AuthProvider, useAuth } from "./contexts/AuthContext";
 import Layout from "./components/Layout";
 import { ToastProvider } from "./contexts/ToastContext";
@@ -28,30 +29,40 @@ function RootRoute() {
   return user ? <Home /> : <Welcome />;
 }
 
+// 路由级进出场过渡：欢迎页 ↔ 登录/注册 整页渐隐/浮现
+function AnimatedRoutes() {
+  const location = useLocation();
+  return (
+    <AnimatePresence mode="wait" initial={false}>
+      <Routes location={location} key={location.pathname}>
+        <Route element={<Layout />}>
+          <Route path="/" element={<RootRoute />} />
+          <Route path="/login" element={<Login />} />
+          <Route path="/register" element={<Register />} />
+          {/* Protected routes */}
+          <Route element={<ProtectedRoute />}>
+            <Route path="/resumes" element={<ResumeList />} />
+            <Route path="/resumes/:id" element={<ResumeDetail />} />
+            <Route path="/interviews" element={<InterviewList />} />
+            <Route path="/interviews/:id" element={<InterviewChat />} />
+            <Route path="/interviews/:id/report" element={<InterviewReport />} />
+            <Route path="/settings" element={<Settings />} />
+            <Route path="/schedule" element={<Schedule />} />
+            <Route path="/knowledge-base" element={<KnowledgeBase />} />
+            <Route path="/knowledge-base/:id" element={<KnowledgeBaseDetail />} />
+          </Route>
+        </Route>
+      </Routes>
+    </AnimatePresence>
+  );
+}
+
 function App() {
   return (
     <BrowserRouter>
       <AuthProvider>
         <ToastProvider>
-        <Routes>
-          <Route element={<Layout />}>
-            <Route path="/" element={<RootRoute />} />
-            <Route path="/login" element={<Login />} />
-            <Route path="/register" element={<Register />} />
-            {/* Protected routes */}
-            <Route element={<ProtectedRoute />}>
-              <Route path="/resumes" element={<ResumeList />} />
-              <Route path="/resumes/:id" element={<ResumeDetail />} />
-              <Route path="/interviews" element={<InterviewList />} />
-              <Route path="/interviews/:id" element={<InterviewChat />} />
-              <Route path="/interviews/:id/report" element={<InterviewReport />} />
-              <Route path="/settings" element={<Settings />} />
-              <Route path="/schedule" element={<Schedule />} />
-              <Route path="/knowledge-base" element={<KnowledgeBase />} />
-              <Route path="/knowledge-base/:id" element={<KnowledgeBaseDetail />} />
-            </Route>
-          </Route>
-        </Routes>
+        <AnimatedRoutes />
         </ToastProvider>
       </AuthProvider>
     </BrowserRouter>
