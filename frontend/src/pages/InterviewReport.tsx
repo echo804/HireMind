@@ -25,9 +25,24 @@ const DIRECTION_LABELS: Record<string, string> = {
 };
 
 const DIM_LABELS: Record<string, string> = {
-  tech_depth: "技术深度", clarity: "表达清晰",
+  tech_depth: "技术深度", tech_selection: "技术选型",
+  problem_solving: "问题解决", production: "生产意识",
+  communication: "表达沟通", clarity: "表达清晰",
   logic: "逻辑思维", experience: "实战经验", learning: "学习能力",
 };
+
+/** 极简 Markdown 渲染（与 InterviewChat 一致） */
+function renderMarkdown(text: string) {
+  const escape = (s: string) => s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+  let html = escape(text);
+  html = html.replace(/```([\s\S]*?)```/g, (_m, code) =>
+    `<pre class="bg-slate-100 rounded-lg p-3 my-2 text-xs overflow-x-auto whitespace-pre-wrap">${code}</pre>`);
+  html = html.replace(/`([^`]+)`/g, `<code class="bg-slate-100 text-red-500 px-1 rounded text-xs">$1</code>`);
+  html = html.replace(/\*\*([^*]+)\*\*/g, "<strong>$1</strong>");
+  html = html.replace(/^[-•]\s+(.+)$/gm, "<li class='ml-4 list-disc'>$1</li>");
+  html = html.replace(/\n/g, "<br/>");
+  return html;
+}
 
 async function downloadPDF(sessionId: string, toast: (msg: string, type?: "success" | "error" | "info") => void) {
   try {
@@ -170,7 +185,10 @@ export default function InterviewReport() {
             <h1 className="text-3xl font-bold text-ink mb-1">面试报告</h1>
             <p className="text-ink-muted text-sm">
               {DIRECTION_LABELS[report.direction] || report.direction} &middot; {report.total_questions} 题 &middot;{" "}
-              {new Date(report.created_at).toLocaleDateString("zh-CN")}
+              {new Date(report.created_at).toLocaleDateString("zh-CN")} &middot; 已答 {answers.length} 题
+              {report.total_questions > 0 && (
+                <span>（完成度 {Math.round((answers.length / report.total_questions) * 100)}%）</span>
+              )}
             </p>
           </div>
           <RingScore score={score} />
@@ -192,13 +210,14 @@ export default function InterviewReport() {
           {/* 综合评价 */}
           <div className="bg-white rounded-xl p-5 shadow-sm">
             <h3 className="font-semibold text-ink mb-3">综合评价</h3>
-            <p className="text-sm text-ink-secondary leading-relaxed">{report.feedback}</p>
+            <div className="text-sm text-ink-secondary leading-relaxed"
+              dangerouslySetInnerHTML={{ __html: renderMarkdown(report.feedback || "暂无") }} />
           </div>
 
-          {/* 问答回顾 */}
+          {/* 面试复盘：逐题回顾 + 点评 */}
           {answers.length > 0 && (
             <div className="bg-white rounded-xl p-5 shadow-sm">
-              <h3 className="font-semibold text-ink mb-3">问答回顾</h3>
+              <h3 className="font-semibold text-ink mb-3">面试复盘</h3>
               <div className="space-y-2">
                 {answers.map((a) => (
                   <div key={a.index} className="border border-line rounded-lg overflow-hidden">
@@ -229,7 +248,8 @@ export default function InterviewReport() {
                         {a.comment && (
                           <div>
                             <p className="text-xs text-ink-muted mb-1">点评</p>
-                            <p className="text-sm text-ink-secondary italic">{a.comment}</p>
+                            <div className="text-sm text-ink-secondary italic"
+                              dangerouslySetInnerHTML={{ __html: renderMarkdown(a.comment) }} />
                           </div>
                         )}
                       </div>

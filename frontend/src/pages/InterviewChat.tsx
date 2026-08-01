@@ -9,6 +9,21 @@ interface QARecord {
   answer?: string;
 }
 
+interface ChatMsg {
+  role: "ai" | "user";
+  text: string;
+  /** AI 对上一题回答的反馈（肯定/纠错） */
+  feedback?: string;
+}
+
+/** 从问题文本中提取 [来源: xxx] 标注，返回 { 正文, 来源[] } */
+function parseSources(text: string): { body: string; sources: string[] } {
+  const m = text.match(/\[来源:\s*([^\]]+)\]/);
+  if (!m) return { body: text, sources: [] };
+  const sources = m[1].split(/[、,，]/).map(s => s.trim()).filter(Boolean);
+  return { body: text.replace(m[0], "").trim(), sources };
+}
+
 /** 极简 Markdown 渲染：加粗 / 换行 / 代码块 / 行内代码 / 列表 */
 function renderMarkdown(text: string) {
   const escape = (s: string) => s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
@@ -32,7 +47,7 @@ import { ChatSkeleton } from "../components/Skeleton";
 export default function InterviewChat() {
   const { id } = useParams();
   const navigate = useNavigate();
-  const [messages, setMessages] = useState<{ role: "ai" | "user"; text: string }[]>([]);
+  const [messages, setMessages] = useState<ChatMsg[]>([]);
   const [currentQ, setCurrentQ] = useState("");
   const [streamingQ, setStreamingQ] = useState("");
   const [currentIdx, setCurrentIdx] = useState(0);
@@ -56,7 +71,7 @@ export default function InterviewChat() {
       const qs = (data.questions_asked || []) as QARecord[];
       const answers = (data.answers_given || []) as QARecord[];
 
-      const msgs: { role: "ai" | "user"; text: string }[] = [];
+      const msgs: ChatMsg[] = [];
       for (const q of qs) {
         const a = answers.find((x: QARecord) => x.index === q.index);
         if (a && a.answer) {
@@ -145,8 +160,11 @@ export default function InterviewChat() {
                 setStreamingQ(prev => prev + chunk.token);
               }
               if (chunk.question) {
-                // 流式完成：只更新当前问题区域，不重复加入消息列表
+                // 流式完成：先插入对上一回答的反馈，再更新当前问题区域
                 const finalQ = chunk.question;
+                if (chunk.feedback) {
+                  setMessages(prev => [...prev, { role: "ai", text: chunk.feedback, feedback: chunk.feedback }]);
+                }
                 setStreamingQ("");
                 setCurrentQ(finalQ);
                 setCurrentIdx(chunk.question_index);
@@ -206,28 +224,58 @@ export default function InterviewChat() {
   return (
     <div className="flex flex-col h-[calc(100vh-12rem)]">
       <div className="flex-1 overflow-y-auto space-y-4 mb-4">
-        {messages.map((msg, i) => (
-          <div key={i} className={msg.role === "user" ? "flex justify-end" : "flex justify-start"}>
-            <div className={"max-w-[75%] rounded-xl p-4 " + (msg.role === "user" ? userBubble : aiBubble)}>
-              <p className={"text-xs mb-1 " + (msg.role === "user" ? userLabel : aiLabel)}>
-                {msg.role === "user" ? "你" : "AI 面试官"}
-              </p>
-              <p className="text-sm leading-relaxed"
-                dangerouslySetInnerHTML={{ __html: msg.role === "ai" ? renderMarkdown(msg.text) : msg.text }} />
+        {messages.map((msg, i) => {
+          const isFeedback = Boolean(msg.feedback);
+          // 来源标注解析（仅 AI 问题消息）
+          const { body, sources } = isFeedback ? { body: msg.text, sources: [] } : parseSources(msg.text);
+          return (
+            <div key={i} className={msg.role === "user" ? "flex justify-end" : "flex justify-start"}>
+              <div className={
+                "max-w-[75%] rounded-xl p-4 " +
+                (msg.role === "user" ? userBubble :
+                 isFeedback ? "bg-brand-50 border border-brand-100 shadow-sm text-ink" : aiBubble)
+              }>
+                <p className={"text-xs mb-1 " + (msg.role === "user" ? userLabel : aiLabel)}>
+                  {msg.role === "user" ? "你" : isFeedback ? "💬 AI 面试官反馈" : "AI 面试官"}
+                </p>
+                <p className="text-sm leading-relaxed"
+                  dangerouslySetInnerHTML={{ __html: msg.role === "ai" ? renderMarkdown(body) : msg.text }} />
+                {sources.length > 0 && (
+                  <div className="flex flex-wrap gap-1 mt-2">
+                    {sources.map(s => (
+                      <span key={s} className="text-[11px] px-1.5 py-0.5 rounded bg-brand-100 text-brand-700">
+                        📚 {s}
+                      </span>
+                    ))}
+                  </div>
+                )}
+              </div>
             </div>
-          </div>
-        ))}
+          );
+        })}
 
         <div ref={chatEnd} />
 
-        {currentQ && !finished && !streamingQ && (
-          <div className="flex justify-start">
-            <div className="max-w-[75%] rounded-xl p-4 bg-white shadow-sm text-ink border border-line">
-              <p className="text-xs mb-1 text-ink-muted">AI 面试官</p>
-              <p className="text-sm leading-relaxed" dangerouslySetInnerHTML={{ __html: renderMarkdown(currentQ) }} />
+        {currentQ && !finished && !streamingQ && (() => {
+          const { body, sources } = parseSources(currentQ);
+          return (
+            <div className="flex justify-start">
+              <div className="max-w-[75%] rounded-xl p-4 bg-white shadow-sm text-ink border border-line">
+                <p className="text-xs mb-1 text-ink-muted">AI 面试官</p>
+                <p className="text-sm leading-relaxed" dangerouslySetInnerHTML={{ __html: renderMarkdown(body) }} />
+                {sources.length > 0 && (
+                  <div className="flex flex-wrap gap-1 mt-2">
+                    {sources.map(s => (
+                      <span key={s} className="text-[11px] px-1.5 py-0.5 rounded bg-brand-100 text-brand-700">
+                        📚 {s}
+                      </span>
+                    ))}
+                  </div>
+                )}
+              </div>
             </div>
-          </div>
-        )}
+          );
+        })()}
 
         {streamingQ && (
           <div className="flex justify-start">

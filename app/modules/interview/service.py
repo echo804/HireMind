@@ -137,7 +137,7 @@ class InterviewService:
             except Exception as e:
                 logger.error(f"evaluate_interview failed: {e}")
                 report = {
-                    "score": 0, "feedback": "AI 评估暂时不可用，请稍后重试",
+                    "overall_score": 0, "feedback": "AI 评估暂时不可用，请稍后重试",
                     "strengths": [], "weaknesses": [], "suggestions": [],
                     "dimensions": {}, "per_question": [],
                 }
@@ -212,7 +212,7 @@ class InterviewService:
             except Exception as e:
                 logger.error(f"evaluate_interview failed: {e}")
                 report = {
-                    "score": 0, "feedback": "AI 评估暂时不可用，请稍后重试",
+                    "overall_score": 0, "feedback": "AI 评估暂时不可用，请稍后重试",
                     "strengths": [], "weaknesses": [], "suggestions": [],
                     "dimensions": {}, "per_question": [],
                 }
@@ -255,6 +255,7 @@ class InterviewService:
                         "question_index": next_idx,
                         "total": session.total_questions,
                         "question": question_entry["question"],
+                        "feedback": q_data.get("feedback", ""),
                         "session_id": str(session.id),
                     }
                     return
@@ -276,6 +277,7 @@ class InterviewService:
             "question_index": next_idx,
             "total": session.total_questions,
             "question": question_text,
+            "feedback": "",
             "session_id": str(session.id),
         }
 
