@@ -15,6 +15,7 @@ class KnowledgeDocument(BaseModel):
     user_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), nullable=False, index=True)
     filename: Mapped[str] = mapped_column(String(255), nullable=False)
     file_type: Mapped[str] = mapped_column(String(50), nullable=False)
+    category: Mapped[str] = mapped_column(String(50), default="other", nullable=False, index=True)
     file_size: Mapped[int] = mapped_column(Integer, default=0)
     status: Mapped[str] = mapped_column(String(20), default="pending")
     chunk_count: Mapped[int] = mapped_column(Integer, default=0)
@@ -25,6 +26,7 @@ class KnowledgeDocument(BaseModel):
             "id": str(self.id),
             "filename": self.filename,
             "file_type": self.file_type,
+            "category": self.category,
             "file_size": self.file_size,
             "status": self.status,
             "chunk_count": self.chunk_count,

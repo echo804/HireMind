@@ -50,3 +50,4 @@ async def invalidate_user_cache(namespace: str, user_id: str):
     """失效某个用户在某命名空间下的所有缓存"""
     await cache_delete_pattern(f"hiremind:{namespace}:{user_id}:*")
     await cache_delete_pattern(f"hiremind:{namespace}:list:{user_id}")
+    await cache_delete_pattern(f"hiremind:{namespace}:search:{user_id}:*")

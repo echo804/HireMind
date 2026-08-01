@@ -7,6 +7,7 @@ class KnowledgeDocResponse(BaseModel):
     id: str
     filename: str
     file_type: str
+    category: str = "other"
     file_size: int
     status: str
     chunk_count: int
@@ -24,3 +25,5 @@ class KnowledgeSearchResult(BaseModel):
     document_name: str
     score: float
     chunk_index: int
+    chunk_id: str = ""
+    document_id: str = ""

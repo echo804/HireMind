@@ -1,6 +1,6 @@
 """Knowledge base service: parsing, chunking, embedding, search"""
 
-import io, uuid, re, logging
+import io, uuid, re, logging, asyncio, os
 from typing import Optional
 import fitz
 from docx import Document as DocxDocument
@@ -61,20 +61,17 @@ class KnowledgeService:
             chunks.append(current)
         return chunks if chunks else [text]
 
-    async def _get_api_config(self):
-        from app.config.settings import settings as s
-        api_key, base_url = s.AI_BAILIAN_API_KEY, s.AI_BAILIAN_BASE_URL
-        if not api_key:
-            from app.modules.settings.service import get_active_config
-            cfg = get_active_config()
-            api_key, base_url = cfg.get("api_key", ""), cfg.get("base_url", "")
+    async def _get_api_config(self, user_id: str | None = None):
+        from app.modules.settings.service import get_active_config
+        cfg = get_active_config(user_id)
+        api_key, base_url = cfg.get("api_key", ""), cfg.get("base_url", "")
         if not api_key:
             raise BusinessException(ErrorCode.BAD_REQUEST, "Configure AI API Key first")
         return api_key, base_url
 
-    async def _embed_chunks(self, chunks: list[str]) -> list[list[float]]:
+    async def _embed_chunks(self, chunks: list[str], user_id: str | None = None) -> list[list[float]]:
         import httpx
-        api_key, base_url = await self._get_api_config()
+        api_key, base_url = await self._get_api_config(user_id)
         BATCH = 10
         all_results = []
         async with httpx.AsyncClient(timeout=120) as client:
@@ -96,28 +93,109 @@ class KnowledgeService:
         ft = filename.rsplit(".", 1)[-1].lower() if "." in filename else "txt"
         if ft not in ("pdf", "docx", "txt", "md"):
             raise BusinessException(ErrorCode.BAD_REQUEST, f"Unsupported: {ft}")
-        doc = KnowledgeDocument(user_id=uuid.UUID(user_id), filename=filename, file_type=ft, file_size=len(content), status="processing")
+        category = self._guess_category(filename)
+        doc = KnowledgeDocument(user_id=uuid.UUID(user_id), filename=filename, file_type=ft, category=category, file_size=len(content), status="processing")
         self.db.add(doc)
         await self.db.commit()
         await self.db.refresh(doc)
-        try:
-            raw = self._parse_document(content, ft)
-            if not raw.strip():
-                raise BusinessException(ErrorCode.BAD_REQUEST, "No extractable text")
-            chunks = self._chunk_text(raw)
-            logger.info(f"Doc {doc.id}: {len(chunks)} chunks")
-            embeddings = await self._embed_chunks(chunks)
-            for i, (ct, em) in enumerate(zip(chunks, embeddings)):
-                self.db.add(KnowledgeChunk(document_id=doc.id, chunk_index=i, content=ct, embedding=em))
-            doc.status, doc.chunk_count = "ready", len(chunks)
-            await self.db.commit()
-            await self.db.refresh(doc)
-            await invalidate_user_cache("kb", user_id)
-        except Exception as e:
-            doc.status, doc.error_message = "failed", str(e)
-            await self.db.commit()
-            raise
+        # 落盘原始文件，供后台处理与失败重试复用
+        from app.config.settings import settings as s
+        raw_path = self._save_raw(s.STORAGE_PATH, str(doc.id), content)
+        asyncio.create_task(self._process_document(str(doc.id), raw_path, ft))
+        await invalidate_user_cache("kb", user_id)
         return doc.to_dict()
+
+    def _save_raw(self, storage_path: str, doc_id: str, content: bytes) -> str:
+        kb_dir = os.path.join(storage_path, "knowledge")
+        os.makedirs(kb_dir, exist_ok=True)
+        path = os.path.join(kb_dir, f"{doc_id}.bin")
+        with open(path, "wb") as f:
+            f.write(content)
+        return path
+
+    @staticmethod
+    def _guess_category(filename: str) -> str:
+        prefix = filename.split("_", 1)[0].lower()
+        return prefix if prefix in ("agent", "llm", "rag", "tools", "overview") else "other"
+
+    async def _process_document(self, doc_id: str, raw_path: str, ft: str):
+        """后台处理：解析 → 切片 → 向量化 → 落库（独立 session）"""
+        from app.infrastructure.database import async_session_factory
+        from sqlalchemy import select as _select
+        try:
+            async with async_session_factory() as session:
+                r = await session.execute(_select(KnowledgeDocument).where(KnowledgeDocument.id == uuid.UUID(doc_id)))
+                doc = r.scalar_one_or_none()
+                if not doc:
+                    return
+                doc.status, doc.error_message = "processing", None
+                await session.commit()
+
+                with open(raw_path, "rb") as f:
+                    content = f.read()
+                raw = self._parse_document(content, ft)
+                if not raw.strip():
+                    raise BusinessException(ErrorCode.BAD_REQUEST, "No extractable text")
+                chunks = self._chunk_text(raw)
+                logger.info(f"Doc {doc.id}: {len(chunks)} chunks")
+                embeddings = await self._embed_chunks(chunks, str(doc.user_id))
+
+                # 删除旧切片（重试场景），写入新切片
+                await session.execute(delete(KnowledgeChunk).where(KnowledgeChunk.document_id == doc.id))
+                for i, (ct, em) in enumerate(zip(chunks, embeddings)):
+                    session.add(KnowledgeChunk(document_id=doc.id, chunk_index=i, content=ct, embedding=em))
+                doc.status, doc.chunk_count = "ready", len(chunks)
+                await session.commit()
+                await invalidate_user_cache("kb", str(doc.user_id))
+        except Exception as e:
+            logger.error(f"Process doc {doc_id} failed: {e}")
+            try:
+                async with async_session_factory() as session:
+                    r = await session.execute(_select(KnowledgeDocument).where(KnowledgeDocument.id == uuid.UUID(doc_id)))
+                    doc = r.scalar_one_or_none()
+                    if doc:
+                        doc.status, doc.error_message = "failed", str(e)
+                        await session.commit()
+            except Exception as e2:
+                logger.error(f"Mark doc {doc_id} failed: {e2}")
+
+    async def get_document_status(self, doc_id: str, user_id: str) -> dict:
+        did, uid = uuid.UUID(doc_id), uuid.UUID(user_id)
+        r = await self.db.execute(
+            select(KnowledgeDocument).where(
+                KnowledgeDocument.id == did,
+                KnowledgeDocument.user_id.in_([uid, DEV_USER_ID]),
+            )
+        )
+        doc = r.scalar_one_or_none()
+        if not doc:
+            raise BusinessException(ErrorCode.NOT_FOUND, "Document not found")
+        return doc.to_dict()
+
+    async def retry_document(self, doc_id: str, user_id: str) -> dict:
+        """失败重试：读取落盘原始文件重新处理"""
+        from app.config.settings import settings as s
+        did, uid = uuid.UUID(doc_id), uuid.UUID(user_id)
+        r = await self.db.execute(
+            select(KnowledgeDocument).where(
+                KnowledgeDocument.id == did,
+                KnowledgeDocument.user_id.in_([uid, DEV_USER_ID]),
+            )
+        )
+        doc = r.scalar_one_or_none()
+        if not doc:
+            raise BusinessException(ErrorCode.NOT_FOUND, "Document not found")
+        if doc.status == "processing":
+            return doc.to_dict()
+        raw_path = os.path.join(s.STORAGE_PATH, "knowledge", f"{doc_id}.bin")
+        if not os.path.exists(raw_path):
+            raise BusinessException(ErrorCode.BAD_REQUEST, "原始文件不存在，请重新上传")
+        doc.status, doc.error_message = "processing", None
+        await self.db.commit()
+        asyncio.create_task(self._process_document(str(doc.id), raw_path, doc.file_type))
+        await invalidate_user_cache("kb", user_id)
+        return doc.to_dict()
+
 
 
 
@@ -172,7 +250,7 @@ class KnowledgeService:
 
     async def search(self, query: str, top_k: int = 3, user_id: Optional[str] = None) -> list[dict]:
         import httpx
-        api_key, base_url = await self._get_api_config()
+        api_key, base_url = await self._get_api_config(user_id)
         async with httpx.AsyncClient(timeout=30) as client:
             resp = await client.post(f"{base_url}/embeddings", json={"model": "text-embedding-v3", "input": query},
                 headers={"Authorization": f"Bearer {api_key}", "Content-Type": "application/json"})
@@ -181,25 +259,31 @@ class KnowledgeService:
                 raise BusinessException(ErrorCode.AI_SERVICE_UNAVAILABLE, f"Query embedding: {resp.status_code}")
             qvec = resp.json()["data"][0]["embedding"]
         vs = "[" + ",".join(str(v) for v in qvec) + "]"
+        # 缓存 key 按 user_id 隔离，先读缓存
+        query_hash = hashlib.md5(f"{query}:{top_k}".encode()).hexdigest()[:12]
+        cache_key = f"{user_id or 'anon'}:{query_hash}"
+        cached = await cache_get("kb", "search", cache_key)
+        if cached is not None:
+            return cached
         # 搜索范围：自己的文档 + 公共默认文档（DEV 账号）
-        wc = "AND (kd.user_id = :uid::uuid OR kd.user_id = :dev::uuid)" if user_id else ""
+        wc = "AND (kd.user_id = CAST(:uid AS uuid) OR kd.user_id = CAST(:dev AS uuid))" if user_id else ""
         params = {"emb": vs, "emb2": vs, "top": top_k}
         if user_id:
             params["uid"] = user_id
             params["dev"] = str(DEV_USER_ID)
         sql = text(f"""
             SELECT kc.content, kc.chunk_index,
-                   1 - (kc.embedding <=> :emb::vector) AS score,
-                   kd.filename AS doc_name
+                   1 - (kc.embedding <=> CAST(:emb AS vector)) AS score,
+                   kd.filename AS doc_name,
+                   kc.id AS chunk_id,
+                   kd.id AS document_id
             FROM knowledge_chunks kc
             JOIN knowledge_documents kd ON kd.id = kc.document_id
             WHERE kd.status = 'ready' {wc}
-            ORDER BY kc.embedding <=> :emb2::vector
+            ORDER BY kc.embedding <=> CAST(:emb2 AS vector)
             LIMIT :top
         """)
         rows = (await self.db.execute(sql, params)).fetchall()
-        result = [{"content": r[0], "chunk_index": r[1], "score": float(r[2]), "document_name": r[3]} for r in rows]
-        # 缓存搜索结果（短 TTL，因为是向量搜索）
-        query_hash = hashlib.md5(f"{query}:{top_k}".encode()).hexdigest()[:12]
-        await cache_set("kb", user_id or "anon", "search", query_hash, data=result, ttl=300)
+        result = [{"content": r[0], "chunk_index": r[1], "score": float(r[2]), "document_name": r[3], "chunk_id": str(r[4]), "document_id": str(r[5])} for r in rows]
+        await cache_set("kb", "search", cache_key, data=result, ttl=300)
         return result
