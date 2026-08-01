@@ -6,6 +6,7 @@ from app.common.exception.error_code import ErrorCode
 from app.common.exception.handlers import BusinessException
 from app.modules.auth.models import UserEntity
 from app.modules.auth.repository import UserRepository
+from app.common.auth import create_access_token
 from app.modules.auth.schemas import AuthResponse, LoginRequest, RegisterRequest
 
 try:
@@ -27,13 +28,15 @@ class AuthService:
         password_hash = self._hash_password(request.password)
         user = UserEntity(email=request.email, password_hash=password_hash, nickname=request.nickname)
         created = await self.repo.create(user)
-        return AuthResponse(id=str(created.id), email=created.email, nickname=created.nickname or "")
+        token = create_access_token(created.id)
+        return AuthResponse(id=str(created.id), email=created.email, nickname=created.nickname or "", token=token)
 
     async def login(self, request: LoginRequest) -> AuthResponse:
         user = await self.repo.find_by_email(request.email)
         if not user or not self._verify_password(request.password, user.password_hash):
             raise BusinessException(ErrorCode.UNAUTHORIZED, "Invalid email or password")
-        return AuthResponse(id=str(user.id), email=user.email, nickname=user.nickname or "")
+        token = create_access_token(user.id)
+        return AuthResponse(id=str(user.id), email=user.email, nickname=user.nickname or "", token=token)
 
     def _hash_password(self, password: str) -> str:
         if pwd:

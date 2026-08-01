@@ -53,6 +53,8 @@ class ReportResponse(BaseModel):
     total_questions: int
     score: int
     feedback: str
+    dimensions: dict[str, int] = {}
+    per_question: list[dict] = []
     strengths: list[str]
     weaknesses: list[str]
     suggestions: list[str]

@@ -1,0 +1,25 @@
+default_model = "deepseek-pro/deepseek-v4-pro"
+language = "zh"
+[permissions]
+allow = ["Bash(cd /d/codexproject/codexproject/HireMind && git reset --hard HEAD)", "Bash(cd /d/codexproject/codexproject/HireMind && git config core.autocrlf)", "Bash(cd /d/codexproject/codexproject/HireMind && .venv312/Scripts/python.exe -c \"\nimport asyncio\nimport asyncpg\n\nasync def main():\n    try:\n        conn = await asyncpg.connect(\n            host='localhost', port=5432,\n            user='postgres', password='123456',\n            database='postgres'\n        )\n        # 检查 hiremind 是否存在\n        exists = await conn.fetchval(\\\"SELECT 1 FROM pg_database WHERE datname='hiremind'\\\")\n        if not exists:\n            await conn.execute('CREATE DATABASE hiremind')\n            print('DB hiremind created')\n        else:\n            print('DB hiremind already exists')\n        await conn.close()\n    except asyncpg.exceptions.DuplicateDatabaseError:\n        print('DB hiremind already exists')\n\nasyncio.run(main())\n\" 2>&1)", "Bash(echo 23031171 | wsl bash -c \"sudo -S service postgresql status && ss -tlnp | grep 5432\" 2>&1)", "Bash(echo 23031171 | wsl bash -c \"sudo -S service postgresql status && redis-cli ping && python3 --version\" 2>&1)", "Bash(cd /d/codexproject/codexproject/HireMind && .venv312/Scripts/python.exe -c \"\nimport requests\n# 新建面试\nr = requests.post('http://localhost:8000/api/interviews', json={'direction':'Python','total_questions':2})\nsid = r.json()['data']['id']\nprint(f'创建OK: {sid[:8]}')\n\n# 回答1题\nr = requests.post(f'http://localhost:8000/api/interviews/{sid}/answer', json={'answer':'测试回答'})\nprint(f'回答: code={r.json()[\\\"code\\\"]}')\nd = r.json()['data']\nprint(f'完成: {d.get(\\\"is_completed\\\")}, 下题: {d.get(\\\"question\\\",\\\"\\\")[:60]}')\n\")", "Bash(cd /d/codexproject/codexproject/HireMind/frontend && npx tsc --noEmit 2>&1 | head -10)", "Bash(curl.exe -s -o NUL -w \"%{http_code}\" http://localhost:8000/api/resumes 2>&1; echo \" backend\"; curl.exe -s -o NUL -w \"%{http_code}\" http://localhost:5173 2>&1; echo \" frontend\")", "install_skill", "Bash(cd D:\\codexproject\\codexproject\\HireMind && git add app/modules/resume/analyzer.py app/modules/resume/models.py app/modules/resume/repository.py app/modules/resume/router.py app/modules/resume/schemas.py app/modules/resume/service.py app/modules/settings/service.py app/common/exception/handlers.py app/modules/interview/router.py app/modules/schedule/router.py app/modules/auth/repository.py frontend/src/pages/ResumeDetail.tsx frontend/src/pages/ResumeList.tsx frontend/src/api/client.ts frontend/src/components/Skeleton.tsx frontend/src/components/Layout.tsx frontend/src/App.tsx frontend/src/pages/Home.tsx frontend/src/pages/InterviewChat.tsx frontend/src/pages/InterviewList.tsx frontend/src/pages/InterviewReport.tsx frontend/src/pages/KnowledgeBase.tsx frontend/src/pages/KnowledgeBaseDetail.tsx frontend/src/pages/Schedule.tsx frontend/src/pages/Settings.tsx start.bat scripts/start_all.sh scripts/sync_to_wsl.sh scripts/fix_enum.sql docs/resume-module-issues.md && git commit -m \"feat: 简历异步分析+进度条+多项修复\n\n简历模块:\n- 上传秒返 processing → 详情页同步触发 AI 分析\n- 百分比进度条(10%/30%/50%/90%/100%) + 步骤指示器\n- 去掉 content_hash 去重检查(避免删后重传失败)\n- 修复删除 API 参数顺序、枚举 PROCESSING、save 用 merge\n- 修复 API Key 掩码覆盖问题\n\n其他修复:\n- 设置页掩码检测(含 ** 跳过)\n- 异常处理返回正确 HTTP 状态码\n- 所有路由接入 get_current_user_dev 鉴权\n- Skeleton 骨架屏、首页数据概览、路由守卫\n- Chrome 启动入口、sync_to_wsl.sh 同步脚本\")", "Bash(wsl bash:*)", "Bash(wsl bash /mnt/d/codexproject/codexproject/HireMind/scripts/extract_pdf.sh /mnt/d/codexproject/codexproject/HireMind/.reasonix/attachments/clipboard-20260729-144000.356707-000002.pdf /tmp/resume.txt 2>&1; cat /tmp/resume.txt 2>/dev/null || wsl bash -c \"cd ~/HireMind && .venv/bin/python3 /tmp/extract.py\")", "Edit", "Bash(dir E:jianli\\:*)"]
+
+[ui]
+show_reasoning = true
+
+[network]
+
+[network.proxy]
+type = "socks5"
+
+[agent]
+reasoning_language = "zh"
+cold_resume_prune = true
+
+[tools]
+bash_timeout_seconds = 120
+mcp_call_timeout_seconds = 300
+
+[tools.background_jobs]
+stalled_warning_seconds = 900
+
+

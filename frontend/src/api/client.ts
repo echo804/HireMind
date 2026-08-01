@@ -1,36 +1,74 @@
 ﻿const API_BASE = "/api";
 
+function getToken(): string | null {
+  const saved = localStorage.getItem("user");
+  if (!saved) return null;
+  try {
+    return JSON.parse(saved).token || null;
+  } catch {
+    return null;
+  }
+}
+
 export class ApiError extends Error {
+  status: number;
+  code?: string;
+
   constructor(
-    public status: number,
-    public message: string,
-    public code?: string,
+    status: number,
+    message: string,
+    code?: string,
   ) {
     super(message);
     this.name = "ApiError";
+    this.status = status;
+    this.message = message;
+    this.code = code;
   }
 }
 
 async function request<T>(
   path: string,
   options: RequestInit = {},
+  retries = 1,
 ): Promise<T> {
-  const res = await fetch(`${API_BASE}${path}`, {
-    headers: {
-      "Content-Type": "application/json",
-      ...options.headers,
-    },
-    credentials: "include",
-    ...options,
-  });
+  const token = getToken();
+  const isFormData = options.body instanceof FormData;
 
-  const body = await res.json();
+  for (let attempt = 0; attempt <= retries; attempt++) {
+    try {
+      const res = await fetch(`${API_BASE}${path}`, {
+        headers: {
+          ...(isFormData ? {} : { "Content-Type": "application/json" }),
+          ...(token ? { Authorization: `Bearer ${token}` } : {}),
+          ...options.headers,
+        } as Record<string, string>,
+        ...options,
+      });
 
-  if (!res.ok || body.code !== 0) {
-    throw new ApiError(res.status, body.message || "请求失败", body.code);
+      // 网络层面成功，解析 body
+      let body: any;
+      try {
+        body = await res.json();
+      } catch {
+        throw new ApiError(res.status, "响应格式错误");
+      }
+
+      if (!res.ok || body.code !== 0) {
+        throw new ApiError(res.status, body.message || "请求失败", body.code);
+      }
+
+      return body.data as T;
+    } catch (e) {
+      // 网络错误（非 ApiError）且还有重试次数时重试
+      if (!(e instanceof ApiError) && attempt < retries) {
+        await new Promise(r => setTimeout(r, 1000));
+        continue;
+      }
+      throw e;
+    }
   }
-
-  return body.data as T;
+  throw new ApiError(0, "请求失败，已重试");
 }
 
 export const api = {
@@ -40,4 +78,24 @@ export const api = {
       method: "POST",
       body: data ? JSON.stringify(data) : undefined,
     }),
+  put: <T>(path: string, data?: unknown) =>
+    request<T>(path, {
+      method: "PUT",
+      body: data ? JSON.stringify(data) : undefined,
+    }),
+  delete: <T>(path: string) =>
+    request<T>(path, { method: "DELETE" }),
+  upload: <T>(path: string, formData: FormData) =>
+    request<T>(path, { method: "POST", body: formData }),
+  /** 下载文件（带 token，返回 Blob；调用方负责处理 blob） */
+  download: async (path: string): Promise<Blob> => {
+    const token = getToken();
+    const res = await fetch(`${API_BASE}${path}`, {
+      headers: { ...(token ? { Authorization: `Bearer ${token}` } : {}) },
+    });
+    if (!res.ok) {
+      throw new ApiError(res.status, "下载失败");
+    }
+    return res.blob();
+  },
 };

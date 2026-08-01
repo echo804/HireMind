@@ -18,3 +18,4 @@ class AuthResponse(BaseModel):
     id: str
     email: str
     nickname: str
+    token: str

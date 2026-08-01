@@ -1,5 +1,6 @@
 import { Link, useLocation, Outlet } from "react-router-dom";
 import { useAuth } from "../contexts/AuthContext";
+import { ErrorBoundary } from "./ErrorBoundary";
 import { useState } from "react";
 
 const navItems = [
@@ -16,24 +17,29 @@ export default function Layout() {
   const [menuOpen, setMenuOpen] = useState(false);
 
   const isActive = (path: string) =>
-    location.pathname.startsWith(path) ? "text-blue-600 border-b-2 border-blue-600" : "text-slate-600 hover:text-blue-600";
+    location.pathname.startsWith(path);
 
-  if (location.pathname === "/login" || location.pathname === "/register") {
+  // 登录/注册与未登录首页（欢迎页）为裸布局，不渲染顶栏与内容容器
+  if (
+    location.pathname === "/login" ||
+    location.pathname === "/register" ||
+    (location.pathname === "/" && !user)
+  ) {
     return <Outlet />;
   }
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-slate-50 to-slate-100">
-      <header className="bg-white shadow-sm sticky top-0 z-50">
+    <div className="min-h-screen app-bg">
+      <header className="bg-white/80 backdrop-blur-md shadow-sm sticky top-0 z-50">
         <div className="max-w-6xl mx-auto px-4 h-16 flex items-center justify-between">
           <div className="flex items-center gap-8">
-            <Link to="/" className="text-xl font-bold text-slate-800 shrink-0">
+            <Link to="/" className="text-xl font-bold text-ink shrink-0">
               HireMind
             </Link>
             <nav className="hidden md:flex items-center gap-6">
               {navItems.map((item) => (
                 <Link key={item.path} to={item.path}
-                  className={"text-sm font-medium pb-1 transition-colors " + isActive(item.path)}>
+                  className={isActive(item.path) ? "text-sm font-medium pb-1 transition-colors text-brand-600 border-b-2 border-brand-600" : "text-sm font-medium pb-1 transition-colors text-ink-secondary hover:text-brand-600"}>
                   {item.label}
                 </Link>
               ))}
@@ -43,11 +49,11 @@ export default function Layout() {
           <div className="flex items-center gap-4">
             {user ? (
               <div className="flex items-center gap-3">
-                <span className="text-sm text-slate-600 hidden sm:inline">{user.nickname}</span>
+                <span className="text-sm text-ink-secondary hidden sm:inline">{user.nickname}</span>
                 <button onClick={logout} className="text-sm text-red-500 hover:underline">退出</button>
               </div>
             ) : (
-              <Link to="/login" className="text-sm text-blue-600 hover:underline">登录</Link>
+              <Link to="/login" className="text-sm text-brand-600 hover:underline">登录</Link>
             )}
             <button className="md:hidden p-1" onClick={() => setMenuOpen(!menuOpen)}>
               <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -62,11 +68,11 @@ export default function Layout() {
         </div>
 
         {menuOpen && (
-          <div className="md:hidden border-t border-slate-100">
+          <div className="md:hidden border-t border-line">
             <div className="max-w-6xl mx-auto px-4 py-3 flex flex-col gap-3">
               {navItems.map((item) => (
                 <Link key={item.path} to={item.path} onClick={() => setMenuOpen(false)}
-                  className={"text-sm font-medium py-1 " + isActive(item.path)}>
+                  className={isActive(item.path) ? "text-sm font-medium py-1 text-brand-600" : "text-sm font-medium py-1 text-ink-secondary hover:text-brand-600"}>
                   {item.label}
                 </Link>
               ))}
@@ -76,7 +82,9 @@ export default function Layout() {
       </header>
 
       <main className="max-w-6xl mx-auto px-4 py-8">
-        <Outlet />
+        <ErrorBoundary>
+          <Outlet />
+        </ErrorBoundary>
       </main>
     </div>
   );

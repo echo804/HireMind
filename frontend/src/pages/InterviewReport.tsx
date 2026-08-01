@@ -1,11 +1,21 @@
 import { useState, useEffect } from "react";
 import { useParams, Link } from "react-router-dom";
+import { api } from "../api/client";
+import { useToast } from "../contexts/ToastContext";
+import { DetailSkeleton } from "../components/Skeleton";
+import { FileDown, RefreshCw } from "lucide-react";
 
 interface ReportData {
   session_id: string; direction: string; total_questions: number;
   score: number; feedback: string;
+  dimensions: Record<string, number>;
+  per_question: { index: number; score: number; comment: string }[];
   strengths: string[]; weaknesses: string[]; suggestions: string[];
   created_at: string;
+}
+
+interface SessionData {
+  answers_given: { index: number; question: string; answer: string }[];
 }
 
 const DIRECTION_LABELS: Record<string, string> = {
@@ -14,76 +24,276 @@ const DIRECTION_LABELS: Record<string, string> = {
   devops: "DevOps / 运维",
 };
 
+const DIM_LABELS: Record<string, string> = {
+  tech_depth: "技术深度", clarity: "表达清晰",
+  logic: "逻辑思维", experience: "实战经验", learning: "学习能力",
+};
+
+async function downloadPDF(sessionId: string, toast: (msg: string, type?: "success" | "error" | "info") => void) {
+  try {
+    const blob = await api.download(`/interviews/${sessionId}/export-pdf`);
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url; a.download = `interview-report-${sessionId.slice(0, 8)}.pdf`;
+    a.click(); URL.revokeObjectURL(url);
+  } catch {
+    toast("导出 PDF 失败，请稍后重试", "error");
+  }
+}
+
+/** SVG radar chart — pure inline, no dependencies */
+function RadarChart({ dims }: { dims: Record<string, number> }) {
+  const keys = Object.keys(dims);
+  if (keys.length === 0) return null;
+  const n = keys.length;
+  const cx = 100, cy = 100, r = 75;
+  const angle = (2 * Math.PI) / n;
+  const points = (level: number) =>
+    keys.map((k, i) => {
+      const v = (dims[k] / 100) * r * level;
+      return `${cx + Math.sin(i * angle - Math.PI / 2) * v},${cy - Math.cos(i * angle - Math.PI / 2) * v}`;
+    });
+
+  return (
+    <svg viewBox="0 0 200 200" className="w-full max-w-[300px] mx-auto">
+      {/* grid rings */}
+      {[0.25, 0.5, 0.75].map(lvl => (
+        <polygon key={lvl} points={points(lvl).join(" ")} fill="none" stroke="#e2e8f0" strokeWidth="0.5" />
+      ))}
+      {/* axes */}
+      {keys.map((_, i) => {
+        const x = cx + Math.sin(i * angle - Math.PI / 2) * r;
+        const y = cy - Math.cos(i * angle - Math.PI / 2) * r;
+        return <line key={i} x1={cx} y1={cy} x2={x} y2={y} stroke="#e2e8f0" strokeWidth="0.5" />;
+      })}
+      {/* data polygon */}
+      <polygon points={points(1).join(" ")} fill="rgba(59,130,246,0.25)" stroke="#3b82f6" strokeWidth="1.5" />
+      {/* data dots */}
+      {keys.map((k, i) => {
+        const v = (dims[k] / 100) * r;
+        const x = cx + Math.sin(i * angle - Math.PI / 2) * v;
+        const y = cy - Math.cos(i * angle - Math.PI / 2) * v;
+        return <circle key={i} cx={x} cy={y} r="3" fill="#2563eb" />;
+      })}
+      {/* labels */}
+      {keys.map((k, i) => {
+        const x = cx + Math.sin(i * angle - Math.PI / 2) * (r + 18);
+        const y = cy - Math.cos(i * angle - Math.PI / 2) * (r + 18);
+        return (
+          <text key={k} x={x} y={y} textAnchor="middle" dominantBaseline="middle"
+            className="fill-slate-600" style={{ fontSize: "9px" }}>
+            {DIM_LABELS[k] || k}
+          </text>
+        );
+      })}
+      {/* center score */}
+      <text x={cx} y={cy} textAnchor="middle" dominantBaseline="middle"
+        className="fill-blue-600 font-bold" style={{ fontSize: "18px" }}>
+        {Math.round(keys.reduce((s, k) => s + dims[k], 0) / n)}
+      </text>
+    </svg>
+  );
+}
+
+function RingScore({ score }: { score: number }) {
+  const color = score >= 80 ? "#16a34a" : score >= 60 ? "#ca8a04" : "#dc2626";
+  const circumference = 2 * Math.PI * 40;
+  const offset = circumference - (score / 100) * circumference;
+  return (
+    <div className="relative w-28 h-28">
+      <svg viewBox="0 0 100 100" className="w-full h-full -rotate-90">
+        <circle cx="50" cy="50" r="40" fill="none" stroke="#e5e7eb" strokeWidth="8" />
+        <circle cx="50" cy="50" r="40" fill="none" stroke={color} strokeWidth="8"
+          strokeDasharray={circumference} strokeDashoffset={offset} strokeLinecap="round" />
+      </svg>
+      <div className="absolute inset-0 flex flex-col items-center justify-center">
+        <span className="text-2xl font-bold" style={{ color }}>{score}</span>
+        <span className="text-[10px] text-ink-muted">总分</span>
+      </div>
+    </div>
+  );
+}
+
+
 export default function InterviewReport() {
   const { id } = useParams();
+  const { toast } = useToast();
   const [report, setReport] = useState<ReportData | null>(null);
+  const [session, setSession] = useState<SessionData | null>(null);
   const [loading, setLoading] = useState(true);
+  const [reEvaluating, setReEvaluating] = useState(false);
+  const [openQA, setOpenQA] = useState<number | null>(null);
 
   useEffect(() => {
-    fetch("/api/interviews/" + id + "/report").then(r => r.json()).then(body => {
-      if (body.code === 0) setReport(body.data);
-      setLoading(false);
-    });
+    Promise.all([
+      api.get<any>("/interviews/" + id + "/report"),
+      api.get<any>("/interviews/" + id),
+    ]).then(([reportData, sessionData]) => {
+      setReport(reportData);
+      setSession(sessionData);
+    }).catch(() => toast("加载面试报告失败", "error")).finally(() => setLoading(false));
   }, [id]);
 
-  if (loading) return <div className="text-center py-12 text-slate-400">加载中...</div>;
-  if (!report) return <div className="text-center py-12 text-slate-400">报告不存在</div>;
+  const handleReEvaluate = async () => {
+    if (!report) return;
+    setReEvaluating(true);
+    try {
+      const data = await api.post<any>("/interviews/" + id + "/re-evaluate");
+      setReport(data);
+      toast("评估报告已重新生成", "success");
+    } catch {
+      toast("重新生成失败，请检查 AI 配置后重试", "error");
+    } finally {
+      setReEvaluating(false);
+    }
+  };
 
-  const scoreColor = report.score >= 80 ? "text-green-600" : report.score >= 60 ? "text-yellow-600" : report.score >= 30 ? "text-orange-600" : "text-red-600";
-  const scoreLabel = report.score >= 80 ? "优秀" : report.score >= 60 ? "良好" : report.score >= 30 ? "较差" : "未完成";
+  if (loading) return <DetailSkeleton />;
+  if (!report) return <div className="text-center py-12 text-ink-muted">报告不存在</div>;
+
+  const score = report.score;
+
+  const answers: { index: number; question: string; answer: string; score?: number; comment?: string }[] =
+    (session?.answers_given || []).map(a => {
+      const pq = (report.per_question || []).find(p => p.index === a.index);
+      return { ...a, score: pq?.score, comment: pq?.comment };
+    });
 
   return (
     <div>
-      <Link to="/interviews" className="text-sm text-blue-600 hover:underline">&larr; 返回面试列表</Link>
+      <Link to="/interviews" className="text-sm text-brand-600 hover:underline">&larr; 返回面试列表</Link>
 
-      <div className="text-center my-8">
-        <div className={"text-5xl font-bold mb-2 " + scoreColor}>{report.score}</div>
-        <p className={"text-sm font-medium " + scoreColor}>{scoreLabel}</p>
-        <p className="text-slate-500">综合评分</p>
-        <p className="text-sm text-slate-400 mt-1">
-          {DIRECTION_LABELS[report.direction] || report.direction} &middot;
-          共 {report.total_questions} 题 &middot;
-          {new Date(report.created_at).toLocaleDateString("zh-CN")}
-        </p>
-      </div>
-
-      <div className="bg-white rounded-xl p-6 shadow-sm mb-4">
-        <h3 className="font-semibold text-slate-800 mb-3">评价反馈</h3>
-        <p className="text-sm text-slate-600 whitespace-pre-line">{report.feedback}</p>
-      </div>
-
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-4">
-        <div className="bg-white rounded-xl p-5 shadow-sm">
-          <h3 className="font-semibold text-green-700 mb-3">优势</h3>
-          <ul className="space-y-2">
-            {report.strengths.map((s, i) => (
-              <li key={i} className="text-sm text-slate-600 flex items-start gap-2">
-                <span className="text-green-500 mt-0.5">✓</span>{s}
-              </li>
-            ))}
-          </ul>
-        </div>
-        <div className="bg-white rounded-xl p-5 shadow-sm">
-          <h3 className="font-semibold text-yellow-700 mb-3">不足</h3>
-          <ul className="space-y-2">
-            {report.weaknesses.map((w, i) => (
-              <li key={i} className="text-sm text-slate-600 flex items-start gap-2">
-                <span className="text-yellow-500 mt-0.5">!</span>{w}
-              </li>
-            ))}
-          </ul>
-        </div>
-        <div className="bg-white rounded-xl p-5 shadow-sm">
-          <h3 className="font-semibold text-blue-700 mb-3">建议</h3>
-          <ul className="space-y-2">
-            {report.suggestions.map((s, i) => (
-              <li key={i} className="text-sm text-slate-600 flex items-start gap-2">
-                <span className="text-blue-500 mt-0.5">→</span>{s}
-              </li>
-            ))}
-          </ul>
+      {/* ─── Banner ─── */}
+      <div className="mt-4 rounded-2xl p-8 bg-white shadow-sm">
+        <div className="flex flex-col md:flex-row items-center justify-between gap-6">
+          <div>
+            <h1 className="text-3xl font-bold text-ink mb-1">面试报告</h1>
+            <p className="text-ink-muted text-sm">
+              {DIRECTION_LABELS[report.direction] || report.direction} &middot; {report.total_questions} 题 &middot;{" "}
+              {new Date(report.created_at).toLocaleDateString("zh-CN")}
+            </p>
+          </div>
+          <RingScore score={score} />
         </div>
       </div>
+
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 mt-6">
+
+        {/* ─── 左列：雷达图 + 问答回顾 ─── */}
+        <div className="space-y-4">
+          {/* 雷达图 */}
+          {report.dimensions && Object.keys(report.dimensions).length > 0 && (
+            <div className="bg-white rounded-xl p-5 shadow-sm">
+              <h3 className="font-semibold text-ink mb-3">能力雷达</h3>
+              <RadarChart dims={report.dimensions} />
+            </div>
+          )}
+
+          {/* 综合评价 */}
+          <div className="bg-white rounded-xl p-5 shadow-sm">
+            <h3 className="font-semibold text-ink mb-3">综合评价</h3>
+            <p className="text-sm text-ink-secondary leading-relaxed">{report.feedback}</p>
+          </div>
+
+          {/* 问答回顾 */}
+          {answers.length > 0 && (
+            <div className="bg-white rounded-xl p-5 shadow-sm">
+              <h3 className="font-semibold text-ink mb-3">问答回顾</h3>
+              <div className="space-y-2">
+                {answers.map((a) => (
+                  <div key={a.index} className="border border-line rounded-lg overflow-hidden">
+                    <button
+                      onClick={() => setOpenQA(openQA === a.index ? null : a.index)}
+                      className="w-full flex items-center justify-between px-4 py-3 text-left hover:bg-surface-muted transition-colors"
+                    >
+                      <span className="text-sm font-medium text-ink">
+                        第{a.index}题
+                        {a.score != null && (
+                          <span className="ml-2 text-xs px-1.5 py-0.5 rounded bg-brand-100 text-brand-700">
+                            {a.score}/10
+                          </span>
+                        )}
+                      </span>
+                      <span className="text-ink-muted text-xs">{openQA === a.index ? "收起 ▲" : "展开 ▼"}</span>
+                    </button>
+                    {openQA === a.index && (
+                      <div className="px-4 pb-4 space-y-2">
+                        <div>
+                          <p className="text-xs text-ink-muted mb-1">题目</p>
+                          <p className="text-sm text-ink">{a.question}</p>
+                        </div>
+                        <div>
+                          <p className="text-xs text-ink-muted mb-1">回答</p>
+                          <p className="text-sm text-ink-secondary">{a.answer}</p>
+                        </div>
+                        {a.comment && (
+                          <div>
+                            <p className="text-xs text-ink-muted mb-1">点评</p>
+                            <p className="text-sm text-ink-secondary italic">{a.comment}</p>
+                          </div>
+                        )}
+                      </div>
+                    )}
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+        </div>
+
+        {/* ─── 右列：优势 / 不足 / 建议 ─── */}
+        <div className="space-y-4">
+          <CardGroup title="优势" items={report.strengths} color="green" />
+          <CardGroup title="不足" items={report.weaknesses} color="yellow" />
+          <CardGroup title="建议" items={report.suggestions} color="blue" />
+        </div>
+      </div>
+
+      {/* ─── 底部操作 ─── */}
+      <div className="mt-8 flex justify-center gap-3">
+        <Link to="/interviews"
+          className="px-5 py-2.5 border border-line text-ink-secondary rounded-xl text-sm hover:bg-surface-muted transition-colors">
+          返回列表
+        </Link>
+        <button onClick={() => downloadPDF(report.session_id, toast)}
+          className="px-5 py-2.5 bg-brand-600 text-white rounded-xl text-sm font-medium hover:bg-brand-700 transition-colors inline-flex items-center gap-2">
+          <FileDown className="w-4 h-4" strokeWidth={1.5} /> 导出 PDF
+        </button>
+        <button onClick={handleReEvaluate} disabled={reEvaluating}
+          className="px-5 py-2.5 bg-brand-600 text-white rounded-xl text-sm font-medium hover:bg-brand-700 disabled:opacity-50 transition-colors inline-flex items-center gap-2">
+          {reEvaluating ? "评估中..." : <><RefreshCw className="w-4 h-4" strokeWidth={1.5} /> 重新生成评估</>}
+        </button>
+      </div>
+    </div>
+  );
+}
+
+function CardGroup({ title, items, color }: {
+  title: string; items: string[]; color: string;
+}) {
+  return (
+    <div className="bg-white rounded-xl p-5 shadow-sm">
+      <h3 className={
+        color === "green" ? "font-semibold mb-3 text-green-600" :
+        color === "yellow" ? "font-semibold mb-3 text-yellow-600" :
+        "font-semibold mb-3 text-brand-600"
+      }>{title}</h3>
+      {items.length === 0 ? (
+        <p className="text-sm text-ink-muted">暂无</p>
+      ) : (
+        <ul className="space-y-2">
+          {items.map((s, i) => (
+            <li key={i} className="text-sm text-ink-secondary flex items-start gap-2">
+              <span className={
+                color === "green" ? "w-1.5 h-1.5 rounded-full bg-green-500 mt-1.5 shrink-0" :
+                color === "yellow" ? "w-1.5 h-1.5 rounded-full bg-yellow-500 mt-1.5 shrink-0" :
+                "w-1.5 h-1.5 rounded-full bg-brand-500 mt-1.5 shrink-0"
+              } />
+              {s}
+            </li>
+          ))}
+        </ul>
+      )}
     </div>
   );
 }

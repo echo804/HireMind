@@ -34,7 +34,7 @@ export function ToastProvider({ children }: { children: ReactNode }) {
               "pointer-events-auto px-4 py-3 rounded-lg shadow-lg text-sm font-medium transition-all animate-slide-in " +
               (t.type === "success" ? "bg-green-600 text-white" :
                t.type === "error" ? "bg-red-600 text-white" :
-               "bg-slate-800 text-white")
+               "bg-ink text-white")
             }>
             {t.message}
           </div>

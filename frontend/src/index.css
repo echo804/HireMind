@@ -1,1 +1,102 @@
 ﻿@import "tailwindcss";
+
+/* ─── 品牌色彩体系（极简素蓝白 · 规范 v1.0 见 docs/design-system.md） ─── */
+@theme {
+  /* 底色 */
+  --color-paper: #fafaf9;          /* 页面底（暖白） */
+  --color-surface: #ffffff;        /* 卡片 / 浮层 */
+  --color-surface-muted: #f5f5f4;  /* 次级底 / 悬停底 */
+
+  /* 文字灰阶 */
+  --color-ink: #18181b;            /* 主文 */
+  --color-ink-secondary: #52525b;  /* 次文 */
+  --color-ink-muted: #a1a1aa;      /* 弱化 / 占位 */
+  --color-ink-disabled: #d4d4d8;   /* 禁用 */
+
+  /* 边框 */
+  --color-line: #e4e4e7;           /* hairline 边框 */
+
+  /* 品牌蓝（沿用既有全阶梯，主用档位 600/700） */
+  --color-brand-50: #eef4ff;
+  --color-brand-100: #dbe6fe;
+  --color-brand-200: #bfd3fe;
+  --color-brand-300: #93b4fd;
+  --color-brand-400: #608afa;
+  --color-brand-500: #3b63f5;
+  --color-brand-600: #2547eb;
+  --color-brand-700: #1d36d8;
+  --color-brand-800: #1e2faf;
+  --color-brand-900: #1e2c8a;
+  --color-brand-950: #171e54;
+
+  /* 语义色（只表达状态） */
+  --color-success: #16a34a;
+  --color-warning: #ca8a04;
+  --color-error: #dc2626;
+
+  /* 字体 */
+  --font-sans: "Inter", "PingFang SC", "Microsoft YaHei", system-ui, sans-serif;
+
+  --shadow-card: 0 1px 2px 0 rgb(16 24 40 / 0.04), 0 1px 3px 0 rgb(16 24 40 / 0.08);
+  --shadow-card-hover: 0 4px 12px 0 rgb(16 24 40 / 0.1), 0 2px 4px 0 rgb(16 24 40 / 0.06);
+}
+
+/* ─── 基础层 ─── */
+body {
+  font-family: "Inter", "PingFang SC", "Microsoft YaHei", system-ui, sans-serif;
+  -webkit-font-smoothing: antialiased;
+  background-color: var(--color-paper);
+  color: var(--color-ink);
+}
+
+/* 页面渐变背景（极淡蓝光晕，克制） */
+.app-bg {
+  background:
+    radial-gradient(900px 400px at 80% -10%, rgb(37 71 235 / 0.05), transparent 60%),
+    linear-gradient(180deg, #fafaf9 0%, #f5f5f4 100%);
+}
+
+/* ─── 打字机光标 ─── */
+@keyframes blink {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0; }
+}
+.animate-blink { animation: blink 1s step-end infinite; }
+
+/* ─── 无障碍：关闭动效 ─── */
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
+}
+
+/* ─── 通用组件样式 ─── */
+.card {
+  @apply bg-surface rounded-xl p-5 shadow-card border border-line transition-all duration-200;
+}
+.card-hover {
+  @apply hover:shadow-card-hover hover:-translate-y-0.5 hover:border-brand-100;
+}
+
+.btn-primary {
+  @apply inline-flex items-center justify-center gap-1.5 px-5 py-2.5 bg-brand-600 text-white text-sm font-medium rounded-lg
+         hover:bg-brand-700 active:scale-[0.98] transition-all duration-150 shadow-sm
+         focus:outline-none focus:ring-2 focus:ring-brand-500/40 disabled:opacity-50 disabled:pointer-events-none;
+}
+.btn-secondary {
+  @apply inline-flex items-center justify-center gap-1.5 px-5 py-2.5 bg-surface text-ink-secondary text-sm font-medium rounded-lg
+         border border-line hover:bg-surface-muted hover:border-ink-disabled active:scale-[0.98] transition-all duration-150
+         focus:outline-none focus:ring-2 focus:ring-brand-500/30 disabled:opacity-50 disabled:pointer-events-none;
+}
+.btn-danger {
+  @apply inline-flex items-center justify-center gap-1.5 px-5 py-2.5 bg-red-50 text-error text-sm font-medium rounded-lg
+         border border-red-200 hover:bg-red-100 active:scale-[0.98] transition-all duration-150
+         focus:outline-none focus:ring-2 focus:ring-red-400/30 disabled:opacity-50 disabled:pointer-events-none;
+}
+
+.input {
+  @apply w-full px-4 py-2.5 bg-surface border border-line rounded-lg text-sm text-ink placeholder-ink-muted
+         focus:outline-none focus:ring-2 focus:ring-brand-500/30 focus:border-brand-400 transition-all duration-150;
+}

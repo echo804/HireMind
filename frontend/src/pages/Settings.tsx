@@ -1,4 +1,5 @@
 import { useState, useEffect } from "react";
+import { api } from "../api/client";
 
 const PROVIDERS = [
   { value: "bailian", label: "阿里云百炼 (DashScope)" },
@@ -31,6 +32,8 @@ const DEFAULT_URLS: Record<string, string> = {
   openai: "https://api.openai.com/v1",
 };
 
+import { CardSkeleton } from "../components/Skeleton";
+
 export default function Settings() {
   const [settings, setSettings] = useState<SettingsData | null>(null);
   const [loading, setLoading] = useState(true);
@@ -38,10 +41,9 @@ export default function Settings() {
   const [saved, setSaved] = useState(false);
 
   useEffect(() => {
-    fetch("/api/settings").then(r => r.json()).then(body => {
-      if (body.code === 0) setSettings(body.data);
-      setLoading(false);
-    });
+    api.get<any>("/settings").then(data => {
+      setSettings(data);
+    }).catch(() => {}).finally(() => setLoading(false));
   }, []);
 
   const update = (key: string, value: string) => {
@@ -54,13 +56,11 @@ export default function Settings() {
     setSaving(true);
     setSaved(false);
     try {
-      await fetch("/api/settings", {
-        method: "PUT",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(settings),
-      });
+      await api.put("/settings", settings);
       setSaved(true);
       setTimeout(() => setSaved(false), 2000);
+    } catch {
+      // error surfaced by api client
     } finally {
       setSaving(false);
     }
@@ -81,8 +81,8 @@ export default function Settings() {
     setSettings(updated);
   };
 
-  if (loading) return <div className="text-center py-12 text-slate-400">加载中...</div>;
-  if (!settings) return <div className="text-center py-12 text-slate-400">无法加载配置</div>;
+  if (loading) return <CardSkeleton count={1} />;
+  if (!settings) return <div className="text-center py-12 text-ink-muted">无法加载配置</div>;
 
   const provider = settings.provider;
   const apiKeyField = provider + "_api_key";
@@ -91,20 +91,19 @@ export default function Settings() {
 
   return (
     <div className="max-w-2xl">
-      <h2 className="text-2xl font-bold text-slate-800 mb-6">AI 模型配置</h2>
+      <h2 className="text-2xl font-bold text-ink mb-6">AI 模型配置</h2>
 
       <div className="bg-white rounded-xl p-6 shadow-sm space-y-6">
         {/* Provider selection */}
         <div>
-          <label className="block text-sm font-medium text-slate-700 mb-2">AI 服务商</label>
+          <label className="block text-sm font-medium text-ink mb-2">AI 服务商</label>
           <div className="flex flex-wrap gap-2">
             {PROVIDERS.map(p => (
               <button key={p.value} onClick={() => switchProvider(p.value)}
-                className={"px-4 py-2 text-sm rounded-lg transition-colors " + (
-                  provider === p.value
-                    ? "bg-blue-600 text-white"
-                    : "bg-slate-100 text-slate-600 hover:bg-slate-200"
-                )}>
+                className={provider === p.value
+                    ? "px-4 py-2 text-sm rounded-lg transition-colors bg-brand-600 text-white"
+                    : "px-4 py-2 text-sm rounded-lg transition-colors bg-surface-muted text-ink-secondary hover:bg-surface-muted"
+                }>
                 {p.label}
               </button>
             ))}
@@ -113,49 +112,50 @@ export default function Settings() {
 
         {/* API Key */}
         <div>
-          <label className="block text-sm font-medium text-slate-700 mb-1">API Key</label>
+          <label className="block text-sm font-medium text-ink mb-1">API Key</label>
           <input type="password" value={(settings as any)[apiKeyField] || ""}
             onChange={e => update(apiKeyField, e.target.value)}
             placeholder={"请输入 " + PROVIDERS.find(p => p.value === provider)?.label + " API Key"}
-            className="w-full px-4 py-2.5 border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm font-mono"
+            className="w-full px-4 py-2.5 border border-line rounded-lg focus:outline-none focus:ring-2 focus:ring-brand-500 text-sm font-mono"
           />
-          <p className="text-xs text-slate-400 mt-1">已在 .env 中配置时会自动填充</p>
+          <p className="text-xs text-ink-muted mt-1">已在 .env 中配置时会自动填充</p>
         </div>
 
         {/* Base URL */}
         <div>
-          <label className="block text-sm font-medium text-slate-700 mb-1">API 地址</label>
+          <label className="block text-sm font-medium text-ink mb-1">API 地址</label>
           <input type="text" value={(settings as any)[baseUrlField] || ""}
             onChange={e => update(baseUrlField, e.target.value)}
-            className="w-full px-4 py-2.5 border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm font-mono"
+            className="w-full px-4 py-2.5 border border-line rounded-lg focus:outline-none focus:ring-2 focus:ring-brand-500 text-sm font-mono"
           />
         </div>
 
         {/* Model */}
         <div>
-          <label className="block text-sm font-medium text-slate-700 mb-1">模型名称</label>
+          <label className="block text-sm font-medium text-ink mb-1">模型名称</label>
           <input type="text" value={(settings as any)[modelField] || ""}
             onChange={e => update(modelField, e.target.value)}
             placeholder={DEFAULT_MODELS[provider] || ""}
-            className="w-full px-4 py-2.5 border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm font-mono"
+            className="w-full px-4 py-2.5 border border-line rounded-lg focus:outline-none focus:ring-2 focus:ring-brand-500 text-sm font-mono"
           />
-          <p className="text-xs text-slate-400 mt-1">
+          <p className="text-xs text-ink-muted mt-1">
             百炼推荐: qwen3.5-turbo / qwen3.5-plus / qwen3.5-flash &middot; DeepSeek: deepseek-chat &middot; OpenAI: gpt-4o-mini
           </p>
         </div>
 
         <button onClick={handleSave} disabled={saving}
-          className={"w-full py-2.5 text-white font-medium rounded-lg transition-colors " + (
-            saved ? "bg-green-600" : "bg-blue-600 hover:bg-blue-700"
-          )}>
+          className={saved
+            ? "w-full py-2.5 text-white font-medium rounded-lg transition-colors bg-green-600"
+            : "w-full py-2.5 text-white font-medium rounded-lg transition-colors bg-brand-600 hover:bg-brand-700"
+          }>
           {saving ? "保存中..." : saved ? "已保存" : "保存配置"}
         </button>
       </div>
 
       <div className="mt-6 bg-white rounded-xl p-6 shadow-sm">
-        <h3 className="font-semibold text-slate-800 mb-3">设置说明</h3>
-        <ul className="text-sm text-slate-500 space-y-2">
-          <li>&bull; 配置保存在 <code className="text-xs bg-slate-100 px-1 py-0.5 rounded">user_settings.json</code> 文件中</li>
+        <h3 className="font-semibold text-ink mb-3">设置说明</h3>
+        <ul className="text-sm text-ink-secondary space-y-2">
+          <li>&bull; 配置保存在 <code className="text-xs bg-surface-muted px-1 py-0.5 rounded">user_settings.json</code> 文件中</li>
           <li>&bull; 切换服务商后，需填写对应的 API Key</li>
           <li>&bull; 面试和简历分析时会使用当前选中的服务商</li>
           <li>&bull; 也可以在 .env 文件中配置默认值</li>

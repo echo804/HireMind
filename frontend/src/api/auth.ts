@@ -1,9 +1,10 @@
 ﻿import { api } from "./client";
 
 export interface AuthResponse {
-  id: number;
+  id: string;
   email: string;
   nickname: string;
+  token: string;
 }
 
 export interface LoginParams {
