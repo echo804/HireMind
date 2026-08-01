@@ -20,13 +20,6 @@ const STATUS_LABELS: Record<string, string> = {
   pending: "待面试", in_progress: "面试中", completed: "已完成", cancelled: "已取消",
 };
 
-const TYPE_COLORS: Record<string, string> = {
-  pending: "bg-blue-100 text-blue-700",
-  in_progress: "bg-yellow-100 text-yellow-700",
-  completed: "bg-green-100 text-green-700",
-  cancelled: "bg-red-100 text-red-700",
-};
-
 function getWeekDates(date: Date) {
   const d = new Date(date);
   const day = d.getDay();

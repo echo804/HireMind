@@ -1,6 +1,7 @@
 import { useState, useEffect } from "react";
 import { useParams, Link } from "react-router-dom";
 import { api } from "../api/client";
+import { DetailSkeleton } from "../components/Skeleton";
 
 interface ResumeData {
   id: string; filename: string; file_size: number; file_type: string;
@@ -37,9 +38,9 @@ export default function ResumeDetail() {
     return (
       <div>
         <Link to="/resumes" className="text-sm text-blue-600 hover:underline">&larr; 返回简历列表</Link>
-        <div className="text-center py-16">
-          <div className="animate-spin w-10 h-10 border-4 border-blue-200 border-t-blue-600 rounded-full mx-auto mb-4" />
-          <p className="text-slate-500">正在上传文件并启动分析...</p>
+        <div className="mt-4">
+          <DetailSkeleton />
+          <p className="text-center text-slate-400 text-sm mt-4">正在分析简历...</p>
         </div>
       </div>
     );

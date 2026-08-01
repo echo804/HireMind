@@ -11,7 +11,7 @@ from app.modules.interview.schemas import (
     CreateInterviewRequest, AnswerRequest, InterviewSessionResponse,
     InterviewListItem, NextQuestionResponse, ReportResponse,
 )
-from app.modules.interview.agent import generate_question, evaluate_interview
+from app.modules.interview.agent import generate_question, generate_question_stream, evaluate_interview
 from app.modules.resume.repository import ResumeRepository
 from app.modules.knowledgebase.service import KnowledgeService
 
@@ -24,23 +24,23 @@ def _build_resume_context(resume) -> str:
         return ""
     parts = []
     if resume.name:
-        parts.append(f"??????{resume.name}")
+        parts.append(f"姓名：{resume.name}")
     if resume.position:
-        parts.append(f"?????{resume.position}")
+        parts.append(f"职位：{resume.position}")
     if resume.summary:
-        parts.append(f"?????{resume.summary}")
+        parts.append(f"摘要：{resume.summary}")
     if resume.skills:
-        parts.append(f"???{', '.join(resume.skills)}")
+        parts.append(f"技能：{', '.join(resume.skills)}")
     if resume.experience:
         exp_text = []
         for e in resume.experience:
             exp_text.append(f"{e.get('title', '')} @ {e.get('company', '')} ({e.get('duration', '')}): {e.get('description', '')}")
-        parts.append("?????\n" + "\n".join(exp_text))
+        parts.append("工作经历：\n" + "\n".join(exp_text))
     if resume.education:
         edu_text = []
         for e in resume.education:
             edu_text.append(f"{e.get('school', '')} - {e.get('degree', '')} ({e.get('major', '')}, {e.get('year', '')})")
-        parts.append("?????\n" + "\n".join(edu_text))
+        parts.append("教育背景：\n" + "\n".join(edu_text))
     return "\n".join(parts)
 
 
@@ -178,6 +178,107 @@ class InterviewService:
             question=question_entry["question"], session_id=str(session.id),
         )
 
+    async def answer_stream(self, session_id: str, req: AnswerRequest):
+        """流式回答：记录答案后逐 token 推送 AI 生成的问题"""
+        session = await self.repo.find_by_id(uuid.UUID(session_id))
+        if not session:
+            yield {"error": "面试会话不存在"}
+            return
+        if session.status != InterviewStatus.IN_PROGRESS:
+            yield {"error": "面试已结束"}
+            return
+
+        # Load resume context
+        resume_context = ""
+        if session.resume_id:
+            resume_entity = await self.resume_repo.find_by_id(session.resume_id)
+            if resume_entity:
+                resume_context = _build_resume_context(resume_entity)
+
+        current_q = session.questions_asked[-1] if session.questions_asked else {}
+        answer_entry = {
+            "index": session.current_question,
+            "question": current_q.get("question", ""),
+            "answer": req.answer,
+        }
+        answers = list(session.answers_given or [])
+        answers.append(answer_entry)
+        session.answers_given = answers
+
+        if session.current_question >= session.total_questions:
+            try:
+                report = await evaluate_interview(settings, session.direction, answers,
+                                                   user_id=str(session.user_id))
+            except Exception as e:
+                logger.error(f"evaluate_interview failed: {e}")
+                report = {
+                    "score": 0, "feedback": "AI 评估暂时不可用，请稍后重试",
+                    "strengths": [], "weaknesses": [], "suggestions": [],
+                    "dimensions": {}, "per_question": [],
+                }
+            session.report = report
+            session.status = InterviewStatus.COMPLETED
+            session.completed_at = datetime.now(timezone.utc)
+            await self.repo.save(session)
+            yield {"is_completed": True, "question_index": session.current_question, "total": session.total_questions}
+            return
+
+        # Load knowledge base context if enabled
+        knowledge_context = ""
+        if session.use_knowledge:
+            knowledge_context = await self._build_knowledge_context(
+                session.direction, str(session.user_id))
+
+        next_idx = session.current_question + 1
+        question_text = ""
+        try:
+            async for chunk in generate_question_stream(
+                settings, session.direction, session.total_questions,
+                session.current_question, answers,
+                resume_context=resume_context,
+                knowledge_context=knowledge_context,
+                user_id=str(session.user_id),
+            ):
+                if "token" in chunk:
+                    question_text += chunk["token"]
+                    yield {"token": chunk["token"]}
+                elif "question" in chunk:
+                    # 最终解析结果，更新 session
+                    q_data = chunk
+                    question_entry = {"index": next_idx, "question": q_data.get("question", question_text)}
+                    questions = list(session.questions_asked or [])
+                    questions.append(question_entry)
+                    session.questions_asked = questions
+                    session.current_question = next_idx
+                    await self.repo.save(session)
+                    yield {
+                        "question_index": next_idx,
+                        "total": session.total_questions,
+                        "question": question_entry["question"],
+                        "session_id": str(session.id),
+                    }
+                    return
+        except Exception as e:
+            logger.error(f"generate_question_stream failed: {e}")
+            fallback = f"请继续回答第{next_idx}题"
+            question_text = fallback
+            for char in fallback:
+                yield {"token": char}
+
+        # 兜底：如果流式没有正常结束
+        question_entry = {"index": next_idx, "question": question_text}
+        questions = list(session.questions_asked or [])
+        questions.append(question_entry)
+        session.questions_asked = questions
+        session.current_question = next_idx
+        await self.repo.save(session)
+        yield {
+            "question_index": next_idx,
+            "total": session.total_questions,
+            "question": question_text,
+            "session_id": str(session.id),
+        }
+
     async def end_session(self, session_id: str) -> InterviewSessionResponse:
         session = await self.repo.find_by_id(uuid.UUID(session_id))
         if not session:
@@ -186,7 +287,7 @@ class InterviewService:
             raise BusinessException(ErrorCode.INTERVIEW_ALREADY_COMPLETED, "完成了部分题目")
 
         answers = list(session.answers_given or [])
-        # ??? 3 ?????? AI ??????????????
+        # 至少回答了 3 道题才让 AI 出评估报告
         if len(answers) >= 3:
             try:
                 report = await evaluate_interview(settings, session.direction, answers,
@@ -195,7 +296,7 @@ class InterviewService:
             except Exception as e:
                 logger.error(f"Evaluation failed: {e}")
         else:
-            # ?????????
+            # 回答不足3题，给个兜底?
             if len(answers) == 0:
                 session.report = {"overall_score": 0, "feedback": "未回答任何题目，无法评估", "dimensions": {}, "per_question": [], "strengths": [], "weaknesses": ["未完成面试"], "suggestions": ["建议完整参加面试以获得有效评估"]}
             else:
@@ -279,7 +380,7 @@ class InterviewService:
         if not session:
             raise BusinessException(ErrorCode.INTERVIEW_SESSION_NOT_FOUND)
         if session.status != InterviewStatus.COMPLETED:
-            raise BusinessException(ErrorCode.INTERVIEW_ALREADY_COMPLETED, "??????")
+            raise BusinessException(ErrorCode.INTERVIEW_ALREADY_COMPLETED, "面试未完成，无法查看报告")
         report = session.report or {"overall_score": 0, "feedback": "尚未生成评估报告", "dimensions": {}, "per_question": [], "strengths": [], "weaknesses": [], "suggestions": []}
         return ReportResponse(
             session_id=str(session.id), direction=session.direction,

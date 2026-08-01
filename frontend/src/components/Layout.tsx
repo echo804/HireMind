@@ -1,5 +1,6 @@
 import { Link, useLocation, Outlet } from "react-router-dom";
 import { useAuth } from "../contexts/AuthContext";
+import { ErrorBoundary } from "./ErrorBoundary";
 import { useState } from "react";
 
 const navItems = [
@@ -76,7 +77,9 @@ export default function Layout() {
       </header>
 
       <main className="max-w-6xl mx-auto px-4 py-8">
-        <Outlet />
+        <ErrorBoundary>
+          <Outlet />
+        </ErrorBoundary>
       </main>
     </div>
   );

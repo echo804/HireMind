@@ -9,10 +9,15 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.common.exception.error_code import ErrorCode
 from app.common.exception.handlers import BusinessException
 from app.modules.knowledgebase.models import KnowledgeDocument, KnowledgeChunk
+from app.infrastructure.cache import cache_get, cache_set, invalidate_user_cache
+import hashlib
 
 logger = logging.getLogger(__name__)
 CHUNK_SIZE = 500
 CHUNK_OVERLAP = 50
+
+# 公共默认文档的归属账号（未登录 DEV 模式上传的文档对所有用户可见）
+DEV_USER_ID = uuid.UUID("00000000-0000-0000-0000-000000000000")
 
 
 class KnowledgeService:
@@ -107,6 +112,7 @@ class KnowledgeService:
             doc.status, doc.chunk_count = "ready", len(chunks)
             await self.db.commit()
             await self.db.refresh(doc)
+            await invalidate_user_cache("kb", user_id)
         except Exception as e:
             doc.status, doc.error_message = "failed", str(e)
             await self.db.commit()
@@ -121,7 +127,7 @@ class KnowledgeService:
         r = await self.db.execute(
             select(KnowledgeDocument).where(
                 KnowledgeDocument.id == did,
-                KnowledgeDocument.user_id == uid,
+                KnowledgeDocument.user_id.in_([uid, DEV_USER_ID]),
             )
         )
         doc = r.scalar_one_or_none()
@@ -145,8 +151,13 @@ class KnowledgeService:
         }
 
     async def list_documents(self, user_id: str) -> list[dict]:
-        r = await self.db.execute(select(KnowledgeDocument).where(KnowledgeDocument.user_id == uuid.UUID(user_id)).order_by(KnowledgeDocument.created_at.desc()))
-        return [d.to_dict() for d in r.scalars().all()]
+        cached = await cache_get("kb", "list", user_id)
+        if cached is not None:
+            return cached
+        r = await self.db.execute(select(KnowledgeDocument).where(KnowledgeDocument.user_id.in_([uuid.UUID(user_id), DEV_USER_ID])).order_by(KnowledgeDocument.created_at.desc()))
+        result = [d.to_dict() for d in r.scalars().all()]
+        await cache_set("kb", "list", user_id, data=result, ttl=600)
+        return result
 
     async def delete_document(self, doc_id: str, user_id: str):
         did, uid = uuid.UUID(doc_id), uuid.UUID(user_id)
@@ -157,6 +168,7 @@ class KnowledgeService:
         await self.db.execute(delete(KnowledgeChunk).where(KnowledgeChunk.document_id == did))
         await self.db.delete(doc)
         await self.db.commit()
+        await invalidate_user_cache("kb", user_id)
 
     async def search(self, query: str, top_k: int = 3, user_id: Optional[str] = None) -> list[dict]:
         import httpx
@@ -169,19 +181,25 @@ class KnowledgeService:
                 raise BusinessException(ErrorCode.AI_SERVICE_UNAVAILABLE, f"Query embedding: {resp.status_code}")
             qvec = resp.json()["data"][0]["embedding"]
         vs = "[" + ",".join(str(v) for v in qvec) + "]"
-        wc = "AND kd.user_id = :uid::uuid" if user_id else ""
+        # 搜索范围：自己的文档 + 公共默认文档（DEV 账号）
+        wc = "AND (kd.user_id = :uid::uuid OR kd.user_id = :dev::uuid)" if user_id else ""
         params = {"emb": vs, "emb2": vs, "top": top_k}
         if user_id:
             params["uid"] = user_id
+            params["dev"] = str(DEV_USER_ID)
         sql = text(f"""
             SELECT kc.content, kc.chunk_index,
-                   1 - (kc.embedding <=> :emb) AS score,
+                   1 - (kc.embedding <=> :emb::vector) AS score,
                    kd.filename AS doc_name
             FROM knowledge_chunks kc
             JOIN knowledge_documents kd ON kd.id = kc.document_id
             WHERE kd.status = 'ready' {wc}
-            ORDER BY kc.embedding <=> :emb2
+            ORDER BY kc.embedding <=> :emb2::vector
             LIMIT :top
         """)
         rows = (await self.db.execute(sql, params)).fetchall()
-        return [{"content": r[0], "chunk_index": r[1], "score": float(r[2]), "document_name": r[3]} for r in rows]
+        result = [{"content": r[0], "chunk_index": r[1], "score": float(r[2]), "document_name": r[3]} for r in rows]
+        # 缓存搜索结果（短 TTL，因为是向量搜索）
+        query_hash = hashlib.md5(f"{query}:{top_k}".encode()).hexdigest()[:12]
+        await cache_set("kb", user_id or "anon", "search", query_hash, data=result, ttl=300)
+        return result

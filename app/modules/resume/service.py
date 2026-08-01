@@ -8,6 +8,7 @@ from app.modules.resume.repository import ResumeRepository
 from app.modules.resume.schemas import ResumeDetail, ResumeListItem, ResumeResponse
 from app.modules.resume.parser import parse_file
 from app.modules.resume.analyzer import analyze_resume
+from app.infrastructure.cache import cache_get, cache_set, invalidate_user_cache
 
 logger = logging.getLogger(__name__)
 
@@ -42,6 +43,9 @@ class ResumeService:
             status=ResumeStatus.PROCESSING,
         )
         created = await self.repo.create(entity)
+
+        # 上传成功后失效列表缓存，确保新简历立即可见
+        await invalidate_user_cache("resume", user_id)
 
         # 后台异步 AI 分析（使用独立 DB session）
         import asyncio
@@ -108,11 +112,20 @@ class ResumeService:
         return self._to_detail(entity)
 
     async def list_resumes(self, user_id: str, query: str | None = None) -> list[ResumeListItem]:
+        # 搜索不走缓存
         if query:
             entities = await self.repo.search(uuid.UUID(user_id), query)
-        else:
-            entities = await self.repo.find_by_user(uuid.UUID(user_id))
-        return [self._to_list_item(e) for e in entities]
+            return [self._to_list_item(e) for e in entities]
+
+        # 读缓存
+        cached = await cache_get("resume", "list", user_id)
+        if cached is not None:
+            return [ResumeListItem(**item) for item in cached]
+
+        entities = await self.repo.find_by_user(uuid.UUID(user_id))
+        result = [self._to_list_item(e) for e in entities]
+        await cache_set("resume", "list", user_id, data=[item.model_dump() for item in result], ttl=300)
+        return result
 
     async def delete_resume(self, user_id: str, resume_id: str):
         entity = await self.repo.find_by_id(resume_id)
@@ -122,6 +135,7 @@ class ResumeService:
         if path and path.exists():
             path.unlink()
         await self.repo.delete(entity)
+        await invalidate_user_cache("resume", user_id)
 
     def _to_response(self, e: ResumeEntity) -> ResumeResponse:
         return ResumeResponse(

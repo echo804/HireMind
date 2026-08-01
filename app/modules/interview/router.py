@@ -1,7 +1,7 @@
 from fastapi import APIRouter, Depends
-from fastapi.responses import Response
+from fastapi.responses import Response, StreamingResponse
 from sqlalchemy.ext.asyncio import AsyncSession
-import uuid
+import uuid, json
 
 from app.common.result import Result
 from app.common.auth.deps import get_current_user_dev
@@ -73,6 +73,20 @@ async def batch_delete_interviews(
     service = InterviewService(db)
     await service.batch_delete(req.ids)
     return Result.success(None)
+
+
+@router.post("/{session_id}/answer-stream")
+async def answer_question_stream(
+    session_id: str, req: AnswerRequest,
+    db: AsyncSession = Depends(get_db),
+    user_id: uuid.UUID = Depends(get_current_user_dev),
+):
+    """SSE 流式回答问题，逐 token 推送 AI 生成的问题"""
+    async def event_stream():
+        service = InterviewService(db)
+        async for chunk in service.answer_stream(session_id, req):
+            yield f"data: {json.dumps(chunk, ensure_ascii=False)}\n\n"
+    return StreamingResponse(event_stream(), media_type="text/event-stream")
 
 
 @router.get("")

@@ -134,7 +134,6 @@ export default function InterviewReport() {
   if (!report) return <div className="text-center py-12 text-slate-400">报告不存在</div>;
 
   const score = report.score;
-  const scoreColor = score >= 80 ? "#16a34a" : score >= 60 ? "#ca8a04" : "#dc2626";
 
   const answers: { index: number; question: string; answer: string; score?: number; comment?: string }[] =
     (session?.answers_given || []).map(a => {

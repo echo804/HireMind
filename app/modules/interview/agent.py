@@ -82,15 +82,15 @@ EVALUATION_PROMPT = f"""当前日期：{NOW}
 {{{{
   "overall_score": 85,
   "feedback": "综合评价2-3句话",
-  "dimensions": {{
+  "dimensions": {{{{
     "tech_depth": 80,
     "tech_selection": 75,
     "problem_solving": 82,
     "production": 70,
     "communication": 85
-  }},
+  }}}},
   "per_question": [
-    {{"index": 1, "score": 8, "comment": "简短点评"}}
+    {{{{ "index": 1, "score": 8, "comment": "简短点评" }}}}
   ],
   "strengths": ["优势1", "优势2", "优势3"],
   "weaknesses": ["不足1", "不足2"],
@@ -130,9 +130,7 @@ async def generate_question(settings, direction: str, total: int, question_count
     if not llm:
         return {"question": "无法连接AI服务", "feedback": "", "is_final": False, "evaluation": "0"}
 
-    history_text = "\n".join(
-        [f"第{h['index']}题 Q: {h['question']}\nA: {h['answer']}" for h in history[-6:]]
-    ) if history else "（首题，直接开始）"
+    history_text = _build_history_text(history)
 
     if not resume_context:
         resume_context = "（未提供简历信息，按通用方向出题）"
@@ -153,8 +151,57 @@ async def generate_question(settings, direction: str, total: int, question_count
         "tech_stack": tech_stack,
     })
 
+    return _parse_question_json(result.content)
+
+
+async def generate_question_stream(settings, direction: str, total: int, question_count: int,
+                                   history: list[dict], resume_context: str = "", knowledge_context: str = "",
+                                   user_id: str | None = None):
+    """流式生成面试问题，逐 token yield 问题文本，最后 yield 完整的解析结果"""
+    llm = _get_llm(settings, user_id)
+    if not llm:
+        yield {"question": "无法连接AI服务", "feedback": "", "is_final": False, "evaluation": "0"}
+        return
+
+    history_text = _build_history_text(history)
+
+    if not resume_context:
+        resume_context = "（未提供简历信息，按通用方向出题）"
+    if not knowledge_context:
+        knowledge_context = "（未启用知识库，仅凭简历和通用知识出题）"
+
+    tech_stack = _extract_tech_stack(resume_context)
+
+    prompt = ChatPromptTemplate.from_template(SYSTEM_PROMPT)
+    chain = prompt | llm
+    full_content = ""
+    async for chunk in chain.astream({
+        "direction": direction,
+        "total": total,
+        "resume_context": resume_context,
+        "knowledge_context": knowledge_context,
+        "question_count": question_count,
+        "history": history_text,
+        "tech_stack": tech_stack,
+    }):
+        token = chunk.content if hasattr(chunk, 'content') else str(chunk)
+        full_content += token
+        yield {"token": token}
+
+    # 最后 yield 解析结果
+    parsed = _parse_question_json(full_content)
+    yield parsed
+
+
+def _build_history_text(history: list[dict]) -> str:
+    return "\n".join(
+        [f"第{h['index']}题 Q: {h['question']}\nA: {h['answer']}" for h in history[-6:]]
+    ) if history else "（首题，直接开始）"
+
+
+def _parse_question_json(content: str) -> dict:
     try:
-        content = result.content.strip()
+        content = content.strip()
         if content.startswith("```"):
             content = content.split("\n", 1)[-1].rsplit("\n", 1)[0]
         return json.loads(content)

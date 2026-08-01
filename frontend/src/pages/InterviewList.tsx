@@ -36,7 +36,7 @@ const STATUS_MAP: Record<string, string> = {
   pending: "待开始", in_progress: "进行中", completed: "已完成", cancelled: "已取消",
 };
 
-import { CardSkeleton, TableSkeleton } from "../components/Skeleton";
+import { TableSkeleton } from "../components/Skeleton";
 
 export default function InterviewList() {
   const navigate = useNavigate();

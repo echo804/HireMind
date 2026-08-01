@@ -90,8 +90,8 @@
 │            ┌──────────────────────────┼──────────────────┐       │
 │            │                          │                   │       │
 │       ┌────▼────┐           ┌────────▼─────┐      ┌─────▼────┐  │
-│       │PostgreSQL│           │    Redis     │      │   MinIO  │  │
-│       │ +pgvector│          │   缓存/队列   │      │ 文件存储  │  │
+│       │PostgreSQL│           │    Redis     │      │  本地文件  │  │
+│       │ +pgvector│          │   缓存/队列   │      │  存储      │  │
 │       │  :5432   │           │    :6379     │      │  :9000   │  │
 │       └─────────┘           └──────────────┘      └──────────┘  │
 │                                       │                           │
@@ -139,20 +139,19 @@ router.py  →  schemas.py  →  service.py  →  repository.py  →  models.py
 | **Python** | 3.12+ | 运行环境，全面使用 async/await |
 | **SQLAlchemy** | 2.0 | 异步 ORM，声明式模型定义 |
 | **Pydantic** | 2.11+ | 请求/响应模型验证，配置管理 |
-| **Alembic** | 1.17+ | 数据库迁移管理 |
+| **Alembic** | 1.17+ | 数据库迁移管理（待集成，当前使用 create_all） |
 
 ### AI & 文档处理
 
 | 技术 | 用途 |
 |------|------|
-| **LangChain + LangGraph** | AI Agent 编排，面试对话流程管理 |
+| **LangChain** | LLM 调用链编排（Prompt + ChatOpenAI），LangGraph 待集成 |
 | **DashScope (百炼)** | 阿里云大模型 API — 文本生成 + Embedding |
 | **DeepSeek** | DeepSeek 大模型 API 接入 |
 | **OpenAI** | OpenAI GPT 系列 API 接入 |
 | **pgvector** | PostgreSQL 向量扩展，知识库语义检索 |
-| **Tika** | 多格式文档解析（PDF/DOCX/TXT） |
-| **PyMuPDF** | PDF 简历文本提取 |
-| **python-docx** | DOCX 简历文本提取 |
+| **PyMuPDF** | PDF 简历/文档文本提取 |
+| **python-docx** | DOCX 简历/文档文本提取 |
 | **WeasyPrint** | 面试报告 PDF 导出 |
 
 ### 基础设施

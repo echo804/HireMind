@@ -29,7 +29,7 @@ async def update_schedule(
     user_id: uuid.UUID = Depends(get_current_user_dev),
 ) -> Result[ScheduleResponse]:
     service = ScheduleService(db)
-    result = await service.update(event_id, req)
+    result = await service.update(event_id, req, str(user_id))
     return Result.success(result)
 
 
@@ -62,5 +62,5 @@ async def delete_schedule(
     user_id: uuid.UUID = Depends(get_current_user_dev),
 ) -> Result[None]:
     service = ScheduleService(db)
-    await service.delete(event_id)
+    await service.delete(event_id, str(user_id))
     return Result.success(None)

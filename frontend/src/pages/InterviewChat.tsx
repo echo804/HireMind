@@ -15,6 +15,7 @@ export default function InterviewChat() {
   const navigate = useNavigate();
   const [messages, setMessages] = useState<{ role: "ai" | "user"; text: string }[]>([]);
   const [currentQ, setCurrentQ] = useState("");
+  const [streamingQ, setStreamingQ] = useState("");
   const [currentIdx, setCurrentIdx] = useState(0);
   const [total, setTotal] = useState(0);
   const [answer, setAnswer] = useState("");
@@ -36,18 +37,18 @@ export default function InterviewChat() {
       const answers = (data.answers_given || []) as QARecord[];
 
       const msgs: { role: "ai" | "user"; text: string }[] = [];
-      let nextQ = "";
       for (const q of qs) {
-        msgs.push({ role: "ai", text: q.question });
         const a = answers.find((x: QARecord) => x.index === q.index);
         if (a && a.answer) {
+          // 已答题目：完整展示问答对
+          msgs.push({ role: "ai", text: q.question });
           msgs.push({ role: "user", text: a.answer });
         } else {
-          nextQ = q.question;
+          // 当前待回答的问题：只显示在"当前问题"区域，避免重复
+          setCurrentQ(q.question);
         }
       }
       setMessages(msgs);
-      if (nextQ) setCurrentQ(nextQ);
       setLoading(false);
     }).catch((e) => {
       setError(e.message || "加载面试失败");
@@ -57,7 +58,7 @@ export default function InterviewChat() {
 
   useEffect(() => {
     chatEnd.current?.scrollIntoView({ behavior: "smooth" });
-  }, [messages, currentQ]);
+  }, [messages, currentQ, streamingQ]);
 
   const handleSubmit = async () => {
     if (!answer.trim() || sending) return;
@@ -65,17 +66,69 @@ export default function InterviewChat() {
     const myAnswer = answer.trim();
     setAnswer("");
 
-    setMessages(prev => [...prev, { role: "user", text: myAnswer }]);
+    if (currentQ) {
+      // 把当前问题补进消息列表（AI 提问在前、用户回答在后），避免上一题提问丢失
+      setMessages(prev => [...prev, { role: "ai", text: currentQ }, { role: "user", text: myAnswer }]);
+    } else {
+      setMessages(prev => [...prev, { role: "user", text: myAnswer }]);
+    }
+    setCurrentQ("");
+    setStreamingQ("");
 
     try {
-      const data = await api.post<any>("/interviews/" + id + "/answer", { answer: myAnswer });
-      if (data.is_completed) {
-        setFinished(true);
-        setCurrentQ("");
-      } else {
-        setCurrentQ(data.question);
-        setCurrentIdx(data.question_index);
-        setMessages(prev => [...prev, { role: "ai", text: data.question }]);
+      const token = localStorage.getItem("token") || "";
+      const response = await fetch(`/api/interviews/${id}/answer-stream`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          ...(token ? { Authorization: `Bearer ${token}` } : {}),
+        },
+        body: JSON.stringify({ answer: myAnswer }),
+      });
+
+      if (!response.ok) {
+        throw new Error("请求失败");
+      }
+
+      const reader = response.body?.getReader();
+      if (!reader) throw new Error("无法读取响应流");
+
+      const decoder = new TextDecoder();
+      let buffer = "";
+
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+
+        buffer += decoder.decode(value, { stream: true });
+        const lines = buffer.split("\n");
+        buffer = lines.pop() || "";
+
+        for (const line of lines) {
+          if (line.startsWith("data: ")) {
+            try {
+              const chunk = JSON.parse(line.slice(6));
+              if (chunk.error) {
+                setMessages(prev => [...prev, { role: "ai", text: `错误：${chunk.error}` }]);
+                break;
+              }
+              if (chunk.is_completed) {
+                setFinished(true);
+                break;
+              }
+              if (chunk.token) {
+                setStreamingQ(prev => prev + chunk.token);
+              }
+              if (chunk.question) {
+                // 流式完成：只更新当前问题区域，不重复加入消息列表
+                const finalQ = chunk.question;
+                setStreamingQ("");
+                setCurrentQ(finalQ);
+                setCurrentIdx(chunk.question_index);
+              }
+            } catch {}
+          }
+        }
       }
     } catch (e: any) {
       setMessages(prev => [...prev, { role: "ai", text: "抱歉，处理你的回答时出现了问题，请重试。" }]);
@@ -140,11 +193,20 @@ export default function InterviewChat() {
 
         <div ref={chatEnd} />
 
-        {currentQ && !finished && (
+        {currentQ && !finished && !streamingQ && (
           <div className="flex justify-start">
-            <div className="max-w-[75%] rounded-xl p-4 bg-white shadow-sm text-slate-800 animate-pulse">
+            <div className="max-w-[75%] rounded-xl p-4 bg-white shadow-sm text-slate-800">
               <p className="text-xs mb-1 text-slate-400">AI 面试官</p>
               <p className="text-sm">{currentQ}</p>
+            </div>
+          </div>
+        )}
+
+        {streamingQ && (
+          <div className="flex justify-start">
+            <div className="max-w-[75%] rounded-xl p-4 bg-white shadow-sm text-slate-800">
+              <p className="text-xs mb-1 text-slate-400">AI 面试官正在输入...</p>
+              <p className="text-sm">{streamingQ}<span className="animate-pulse">|</span></p>
             </div>
           </div>
         )}
