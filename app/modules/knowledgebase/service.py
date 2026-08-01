@@ -115,8 +115,12 @@ class KnowledgeService:
 
     @staticmethod
     def _guess_category(filename: str) -> str:
-        prefix = filename.split("_", 1)[0].lower()
-        return prefix if prefix in ("agent", "llm", "rag", "tools", "overview") else "other"
+        # 文件名格式：{主题}_{主题}_{内容}.md（如 llm_llm_decoding_strategies.md），取第二段前缀
+        prefix = filename.split("_", 2)[1].lower() if filename.count("_") >= 1 else filename.split("_", 1)[0].lower()
+        if prefix not in ("agent", "llm", "rag", "tools", "overview"):
+            p1 = filename.split("_", 1)[0].lower()
+            prefix = p1 if p1 in ("agent", "llm", "rag", "tools", "overview") else "other"
+        return prefix
 
     async def _process_document(self, doc_id: str, raw_path: str, ft: str):
         """后台处理：解析 → 切片 → 向量化 → 落库（独立 session）"""
