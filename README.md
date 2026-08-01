@@ -364,7 +364,8 @@ HireMind/
 ## 🖼️ 界面预览
 
 <p align="center">
-  <i>截图即将推出 — 欢迎 Clone 体验完整交互</i>
+  <i><img width="1287" height="864" alt="image" src="https://github.com/user-attachments/assets/22596f6a-0b64-4e73-b8ff-7bc8a4a06e03" />
+</i>
 </p>
 
 <!--
