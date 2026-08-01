@@ -25,7 +25,7 @@ interface SearchResult {
 }
 
 import { CardSkeleton } from "../components/Skeleton";
-import { FileText, FileType2, File as FileIcon, UploadCloud, RefreshCw, Search as SearchIcon, Database, Layers, HardDrive, CheckCircle2 } from "lucide-react";
+import { FileText, FileType2, File as FileIcon, UploadCloud, RefreshCw, Search as SearchIcon, Database, Layers, HardDrive, CheckCircle2, X } from "lucide-react";
 
 const CATEGORIES: Record<string, string> = {
   agent: "AI Agent",
@@ -60,6 +60,7 @@ export default function KnowledgeBase() {
   const [uploading, setUploading] = useState(false);
   const [uploadQueue, setUploadQueue] = useState<string[]>([]);
   const [searchQuery, setSearchQuery] = useState("");
+  const [searchedQuery, setSearchedQuery] = useState("");
   const [searchResults, setSearchResults] = useState<SearchResult[]>([]);
   const [searching, setSearching] = useState(false);
   const [deleteTarget, setDeleteTarget] = useState<string | null>(null);
@@ -146,10 +147,25 @@ export default function KnowledgeBase() {
     try {
       const data = await api.post<any>("/knowledge/search", { query: searchQuery, top_k: 10 });
       setSearchResults(data || []);
+      setSearchedQuery(searchQuery.trim());
     } catch {
       toast("搜索失败", "error");
     } finally {
       setSearching(false);
+    }
+  };
+
+  const clearSearch = () => {
+    setSearchQuery("");
+    setSearchedQuery("");
+    setSearchResults([]);
+  };
+
+  // 输入变化时自动清空旧结果，避免展示过期内容
+  const onSearchInputChange = (value: string) => {
+    setSearchQuery(value);
+    if (searchedQuery && value.trim() !== searchedQuery) {
+      setSearchResults([]);
     }
   };
 
@@ -239,10 +255,16 @@ export default function KnowledgeBase() {
         <div className="flex gap-3">
           <div className="relative flex-1">
             <SearchIcon className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-ink-muted" />
-            <input value={searchQuery} onChange={(e) => setSearchQuery(e.target.value)}
+            <input value={searchQuery} onChange={(e) => onSearchInputChange(e.target.value)}
               onKeyDown={(e) => e.key === "Enter" && handleSearch()}
               placeholder="搜索知识库内容（语义检索）..."
-              className="w-full pl-9 pr-3 py-2 border border-line rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-brand-500" />
+              className="w-full pl-9 pr-8 py-2 border border-line rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-brand-500" />
+            {searchQuery && (
+              <button onClick={clearSearch} title="清空搜索"
+                className="absolute right-2.5 top-1/2 -translate-y-1/2 w-5 h-5 flex items-center justify-center rounded-full bg-surface-muted text-ink-muted hover:bg-line hover:text-ink transition-colors">
+                <X className="w-3 h-3" />
+              </button>
+            )}
           </div>
           <button onClick={handleSearch} disabled={searching || !searchQuery.trim()}
             className="px-4 py-2 bg-brand-600 text-white text-sm font-medium rounded-lg hover:bg-brand-700 disabled:opacity-50 transition-colors">
