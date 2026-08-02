@@ -9,6 +9,8 @@ class CreateInterviewRequest(BaseModel):
     interview_type: str = "text"
     total_questions: int = 5
     use_knowledge: bool = False
+    difficulty: str = "normal"
+    interview_style: str = "warm"
 
 
 class AnswerRequest(BaseModel):
@@ -22,6 +24,8 @@ class InterviewSessionResponse(BaseModel):
     status: str
     current_question: int
     total_questions: int
+    difficulty: str | None = None
+    interview_style: str | None = None
     questions_asked: list[Any]
     answers_given: list[Any]
     report: Any = None

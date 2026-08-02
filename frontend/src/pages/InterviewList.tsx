@@ -51,6 +51,8 @@ export default function InterviewList() {
   const [resumeId, setResumeId] = useState("");
   const [totalQ, setTotalQ] = useState(5);
   const [useKnowledge, setUseKnowledge] = useState(false);
+  const [difficulty, setDifficulty] = useState("auto");
+  const [style, setStyle] = useState("warm");
   const [creating, setCreating] = useState(false);
   const [selected, setSelected] = useState<Set<string>>(new Set());
 
@@ -114,6 +116,8 @@ export default function InterviewList() {
         interview_type: "text",
         total_questions: totalQ,
         use_knowledge: useKnowledge,
+        difficulty,
+        interview_style: style,
       });
       if (data?.id) {
         navigate("/interviews/" + data.id);
@@ -165,6 +169,25 @@ export default function InterviewList() {
             <select value={totalQ} onChange={e => setTotalQ(Number(e.target.value))}
               className="px-3 py-2 border border-line rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-brand-500">
               {[3, 5, 8, 10].map(n => <option key={n} value={n}>{n} 道</option>)}
+            </select>
+          </div>
+          <div>
+            <label className="block text-sm text-ink-secondary mb-1">题目难度</label>
+            <select value={difficulty} onChange={e => setDifficulty(e.target.value)}
+              className="px-3 py-2 border border-line rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-brand-500">
+              <option value="auto">自适应（按答题表现）</option>
+              <option value="easy">基础</option>
+              <option value="normal">标准</option>
+              <option value="hard">进阶</option>
+            </select>
+          </div>
+          <div>
+            <label className="block text-sm text-ink-secondary mb-1">面试风格</label>
+            <select value={style} onChange={e => setStyle(e.target.value)}
+              className="px-3 py-2 border border-line rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-brand-500">
+              <option value="warm">温和鼓励</option>
+              <option value="strict">严格专业</option>
+              <option value="coaching">引导教练</option>
             </select>
           </div>
           <div className="flex items-center gap-2">

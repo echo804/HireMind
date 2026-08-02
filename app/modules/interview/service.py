@@ -18,6 +18,17 @@ from app.modules.knowledgebase.service import KnowledgeService
 logger = logging.getLogger(__name__)
 
 
+def _resolve_difficulty(session, answers: list[dict]) -> str:
+    """难度解析：用户选择的固定难度优先；默认 normal 时按已答评估均值自适应"""
+    user_choice = getattr(session, "difficulty", None)
+    if user_choice in ("easy", "normal", "hard"):
+        return user_choice
+    prev_evals = [a.get("evaluation") for a in answers if isinstance(a.get("evaluation"), (int, float))]
+    if prev_evals:
+        avg = sum(prev_evals) / len(prev_evals)
+        return "hard" if avg >= 7 else ("easy" if avg < 4 else "normal")
+    return "normal"
+
 
 def _build_resume_context(resume) -> str:
     if not resume:
@@ -80,6 +91,8 @@ class InterviewService:
             interview_type=InterviewType(req.interview_type),
             total_questions=req.total_questions,
             use_knowledge=req.use_knowledge,
+            difficulty=req.difficulty,
+            interview_style=req.interview_style,
             status=InterviewStatus.IN_PROGRESS,
             started_at=datetime.now(timezone.utc),
         )
@@ -95,6 +108,7 @@ class InterviewService:
             q_data = await generate_question(settings, req.direction, req.total_questions, 0, [],
                                               resume_context=resume_context,
                                               knowledge_context=knowledge_context,
+                                              difficulty=req.difficulty,
                                               user_id=user_id)
         except Exception as e:
             logger.error(f"generate_question failed: {e}")
@@ -162,7 +176,9 @@ class InterviewService:
                                               session.current_question, answers,
                                               resume_context=resume_context,
                                               knowledge_context=knowledge_context,
-                                              user_id=str(session.user_id))
+                                              user_id=str(session.user_id),
+                                              difficulty=_resolve_difficulty(session, answers),
+                                              interview_style=session.interview_style or "warm")
         except Exception as e:
             logger.error(f"generate_question (next) failed: {e}")
             q_data = {"question": f"请继续回答第{session.current_question + 1}题"}
@@ -233,13 +249,8 @@ class InterviewService:
 
         next_idx = session.current_question + 1
         question_text = ""
-        # 难度自适应：根据已答题目 evaluation 均值调整下一题难度
-        prev_evals = [a.get("evaluation") for a in answers if isinstance(a.get("evaluation"), (int, float))]
-        if prev_evals:
-            avg = sum(prev_evals) / len(prev_evals)
-            difficulty = "hard" if avg >= 7 else ("easy" if avg < 4 else "normal")
-        else:
-            difficulty = "normal"
+        # 难度：用户选择优先，否则按已答题目 evaluation 均值自适应
+        difficulty = _resolve_difficulty(session, answers)
         try:
             async for chunk in generate_question_stream(
                 settings, session.direction, session.total_questions,
@@ -248,6 +259,7 @@ class InterviewService:
                 knowledge_context=knowledge_context,
                 user_id=str(session.user_id),
                 difficulty=difficulty,
+                interview_style=session.interview_style or "warm",
             ):
                 if "token" in chunk:
                     question_text += chunk["token"]
@@ -320,13 +332,8 @@ class InterviewService:
         answers = list(session.answers_given or [])
         next_idx = session.current_question + 1
         question_text = ""
-        # 难度自适应（同 answer_stream）
-        prev_evals = [a.get("evaluation") for a in answers if isinstance(a.get("evaluation"), (int, float))]
-        if prev_evals:
-            avg = sum(prev_evals) / len(prev_evals)
-            difficulty = "hard" if avg >= 7 else ("easy" if avg < 4 else "normal")
-        else:
-            difficulty = "normal"
+        # 难度：用户选择优先，否则自适应
+        difficulty = _resolve_difficulty(session, answers)
         try:
             async for chunk in generate_question_stream(
                 settings, session.direction, session.total_questions,
@@ -335,6 +342,7 @@ class InterviewService:
                 knowledge_context=knowledge_context,
                 user_id=str(session.user_id),
                 difficulty=difficulty,
+                interview_style=session.interview_style or "warm",
             ):
                 if "token" in chunk:
                     question_text += chunk["token"]
@@ -524,6 +532,7 @@ class InterviewService:
             id=str(s.id), direction=s.direction,
             interview_type=s.interview_type.value, status=s.status.value,
             current_question=s.current_question, total_questions=s.total_questions,
+            difficulty=s.difficulty, interview_style=s.interview_style,
             questions_asked=s.questions_asked or [],
             answers_given=s.answers_given or [],
             report=s.report, started_at=s.started_at, completed_at=s.completed_at,

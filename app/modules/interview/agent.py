@@ -43,6 +43,10 @@ SYSTEM_PROMPT = f"""当前日期：{NOW}
    - easy：基础概念与理解，考察是否掌握核心定义与简单应用
    - normal：原理与应用，考察机制理解与常见场景实践
    - hard：深入原理与综合设计，考察底层实现、权衡取舍、复杂场景设计
+7b. 根据面试风格（{{interview_style}}）调节语气与提问方式：
+   - strict：严格专业型。直接犀利地提问，措辞简洁正式，不寒暄，紧盯薄弱点追问
+   - warm：温和鼓励型。措辞友好、多肯定，压力小，引导候选人完整表达（默认）
+   - coaching：引导教练型。像导师一样循循善诱，回答不佳时给出提示与思考方向，再让候选人补充
 8. 用 evaluation 字段（0-10 分）评估候选人**上一题回答**的质量（首题可为 5），供难度调整参考
 9. 到达第 {{total}} 题时 is_final=true
 
@@ -134,7 +138,8 @@ def _get_llm(settings, user_id: str | None = None):
 
 async def generate_question(settings, direction: str, total: int, question_count: int,
                             history: list[dict], resume_context: str = "", knowledge_context: str = "",
-                            user_id: str | None = None, difficulty: str = "normal") -> dict:
+                            user_id: str | None = None, difficulty: str = "normal",
+                            interview_style: str = "warm") -> dict:
     llm = _get_llm(settings, user_id)
     if not llm:
         return {"question": "无法连接AI服务", "feedback": "", "is_final": False, "evaluation": "0"}
@@ -159,6 +164,7 @@ async def generate_question(settings, direction: str, total: int, question_count
         "history": history_text,
         "tech_stack": tech_stack,
         "difficulty": difficulty,
+        "interview_style": interview_style,
     })
 
     return _parse_question_json(result.content)
@@ -166,7 +172,8 @@ async def generate_question(settings, direction: str, total: int, question_count
 
 async def generate_question_stream(settings, direction: str, total: int, question_count: int,
                                    history: list[dict], resume_context: str = "", knowledge_context: str = "",
-                                   user_id: str | None = None, difficulty: str = "normal"):
+                                   user_id: str | None = None, difficulty: str = "normal",
+                                   interview_style: str = "warm"):
     """流式生成面试问题，逐 token yield 问题文本，最后 yield 完整的解析结果"""
     llm = _get_llm(settings, user_id)
     if not llm:
@@ -194,6 +201,7 @@ async def generate_question_stream(settings, direction: str, total: int, questio
         "history": history_text,
         "tech_stack": tech_stack,
         "difficulty": difficulty,
+        "interview_style": interview_style,
     }):
         token = chunk.content if hasattr(chunk, 'content') else str(chunk)
         full_content += token

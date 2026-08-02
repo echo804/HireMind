@@ -33,6 +33,8 @@ class InterviewSession(BaseModel):
     questions_asked: Mapped[list] = mapped_column(JSONB, default=list)
     answers_given: Mapped[list] = mapped_column(JSONB, default=list)
     use_knowledge: Mapped[bool] = mapped_column(Boolean, default=False)
+    difficulty: Mapped[str | None] = mapped_column(String(20), nullable=True, default=None, comment="easy/normal/hard")
+    interview_style: Mapped[str | None] = mapped_column(String(20), nullable=True, default=None, comment="strict/warm/coaching")
     report: Mapped[dict | None] = mapped_column(JSONB, nullable=True)
     started_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     completed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
