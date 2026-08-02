@@ -2,6 +2,9 @@ from fastapi import APIRouter, Depends, UploadFile, File, Query
 from sqlalchemy.ext.asyncio import AsyncSession
 from pydantic import BaseModel
 import uuid
+import logging
+
+logger = logging.getLogger(__name__)
 
 from app.common.result import Result
 from app.common.exception.error_code import ErrorCode
@@ -127,7 +130,7 @@ async def export_resume(
     db: AsyncSession = Depends(get_db),
     user_id: uuid.UUID = Depends(get_current_user_dev),
 ):
-    """导出 AI 润色后的简历为 .docx"""
+    """导出 AI 润色后的简历为 .docx（基于原简历模板排版，生成新文件不覆盖原文件）"""
     from fastapi.responses import StreamingResponse
     from io import BytesIO
 
@@ -136,15 +139,57 @@ async def export_resume(
     text = (req.polished_text or "").strip()
     if not text:
         return Result.error(ErrorCode.RESUME_NOT_FOUND, "润色内容为空，无法导出")
-    filename = (detail.name or "resume").replace(" ", "_")
+    original = await service.get_original_path(str(user_id), resume_id)
+    filename = (detail.name or "resume").replace(" ", "_") + "_polished"
     from urllib.parse import quote
     encoded = quote(filename)
     try:
         from docx import Document
-        doc = Document()
-        doc.add_heading(f"{detail.name or '简历'}", level=0)
-        for line in text.split("\n"):
-            doc.add_paragraph(line)
+        from docx.shared import Pt
+
+        original_path, orig_type = (original or (None, None))
+        doc = None
+        if original_path and orig_type == "docx":
+            # 以原 docx 为模板：保留页面设置/样式表，清空正文后重建
+            doc = Document(original_path)
+            # 删除原正文段落（保留 sectPr 与样式）
+            for para in list(doc.paragraphs):
+                p = para._element
+                p.getparent().remove(p)
+        else:
+            doc = Document()
+
+        lines = text.split("\n")
+        for line in lines:
+            line = line.strip()
+            if not line:
+                doc.add_paragraph()
+                continue
+            if original_path and orig_type == "pdf":
+                # PDF 模板：按行特征推断层级（粗体/标题号）——这里基于润色文本的 markdown 痕迹映射
+                if line.startswith("## "):
+                    doc.add_heading(line[3:].strip(), level=1)
+                elif line.startswith("### "):
+                    doc.add_heading(line[4:].strip(), level=2)
+                elif line.startswith("# "):
+                    doc.add_heading(line[2:].strip(), level=0)
+                elif line.startswith("- ") or line.startswith("* "):
+                    doc.add_paragraph(line[2:].strip(), style="List Bullet")
+                else:
+                    doc.add_paragraph(line)
+            else:
+                # docx 模板或新文档：按 markdown 痕迹映射标题层级
+                if line.startswith("## "):
+                    doc.add_heading(line[3:].strip(), level=1)
+                elif line.startswith("### "):
+                    doc.add_heading(line[4:].strip(), level=2)
+                elif line.startswith("# "):
+                    doc.add_heading(line[2:].strip(), level=0)
+                elif line.startswith("- ") or line.startswith("* "):
+                    doc.add_paragraph(line[2:].strip(), style="List Bullet")
+                else:
+                    doc.add_paragraph(line)
+
         buf = BytesIO()
         doc.save(buf)
         buf.seek(0)
@@ -153,3 +198,6 @@ async def export_resume(
             headers={"Content-Disposition": f"attachment; filename*=UTF-8''{encoded}.docx"})
     except ImportError:
         return Result.error(ErrorCode.INTERNAL_ERROR, "docx 支持未安装")
+    except Exception as e:
+        logger.error(f"export_resume failed: {e}")
+        return Result.error(ErrorCode.INTERNAL_ERROR, f"导出失败：{str(e)[:100]}")

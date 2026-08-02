@@ -286,6 +286,15 @@ class ResumeService:
             raise BusinessException(ErrorCode.RESUME_NOT_FOUND, "简历内容为空，无法分析")
         return await analyze_resume_quality(text, entity.position or "", user_id)
 
+    async def get_original_path(self, user_id: str, resume_id: str) -> tuple[str, str] | None:
+        """获取原简历文件路径与类型（只读，供导出模板使用）"""
+        entity = await self.repo.find_by_id(resume_id)
+        if not entity or str(entity.user_id) != user_id:
+            raise BusinessException(ErrorCode.RESUME_NOT_FOUND, "Resume not found")
+        if not entity.file_path or not Path(entity.file_path).exists():
+            return None
+        return entity.file_path, entity.file_type
+
     async def polish(self, user_id: str, resume_id: str) -> dict:
         """AI 润色简历文本"""
         entity = await self.repo.find_by_id(resume_id)
