@@ -22,7 +22,6 @@ export default function ResumeList() {
   const [loading, setLoading] = useState(true);
   const [deleteId, setDeleteId] = useState<string | null>(null);
   const [batchDeleteOpen, setBatchDeleteOpen] = useState(false);
-  const [batchDeleting, setBatchDeleting] = useState(false);
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [search, setSearch] = useState("");
   const navigate = useNavigate();
@@ -79,15 +78,12 @@ export default function ResumeList() {
 
   const handleBatchDelete = async () => {
     if (selected.size === 0) return;
-    setBatchDeleting(true);
     try {
       await api.post<any>("/resumes/batch-delete", { ids: Array.from(selected) });
       setSelected(new Set());
       setBatchDeleteOpen(false);
       await loadResumes();
-    } finally {
-      setBatchDeleting(false);
-    }
+    } catch { /* 忽略：ConfirmDialog 内部处理 */ }
   };
 
   const statusBadge = (status: string, score: number | null) => {

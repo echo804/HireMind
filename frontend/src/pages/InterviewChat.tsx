@@ -110,71 +110,108 @@ export default function InterviewChat() {
     setCurrentQ("");
     setStreamingQ("");
 
+    // token 统一从 localStorage "user" 对象读取（与 client.ts 一致）
+    let token = "";
     try {
-      // token 统一从 localStorage "user" 对象读取（与 client.ts 一致）
-      let token = "";
+      const saved = localStorage.getItem("user");
+      if (saved) token = JSON.parse(saved).token || "";
+    } catch {}
+
+    // 带重试的提交：断线/网络抖动时自动重连（最多 2 次），重试前同步服务端状态避免重复提交
+    const submitWithRetry = async (attempt: number): Promise<boolean> => {
       try {
-        const saved = localStorage.getItem("user");
-        if (saved) token = JSON.parse(saved).token || "";
-      } catch {}
-      const response = await fetch(`/api/interviews/${id}/answer-stream`, {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          ...(token ? { Authorization: `Bearer ${token}` } : {}),
-        },
-        body: JSON.stringify({ answer: myAnswer }),
-      });
+        const response = await fetch(`/api/interviews/${id}/answer-stream`, {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            ...(token ? { Authorization: `Bearer ${token}` } : {}),
+          },
+          body: JSON.stringify({ answer: myAnswer }),
+        });
 
-      if (!response.ok) {
-        throw new Error("请求失败");
-      }
+        if (!response.ok) {
+          throw new Error("请求失败");
+        }
 
-      const reader = response.body?.getReader();
-      if (!reader) throw new Error("无法读取响应流");
+        const reader = response.body?.getReader();
+        if (!reader) throw new Error("无法读取响应流");
 
-      const decoder = new TextDecoder();
-      let buffer = "";
+        const decoder = new TextDecoder();
+        let buffer = "";
 
-      while (true) {
-        const { done, value } = await reader.read();
-        if (done) break;
+        while (true) {
+          const { done, value } = await reader.read();
+          if (done) break;
 
-        buffer += decoder.decode(value, { stream: true });
-        const lines = buffer.split("\n");
-        buffer = lines.pop() || "";
+          buffer += decoder.decode(value, { stream: true });
+          const lines = buffer.split("\n");
+          buffer = lines.pop() || "";
 
-        for (const line of lines) {
-          if (line.startsWith("data: ")) {
-            try {
-              const chunk = JSON.parse(line.slice(6));
-              if (chunk.error) {
-                setMessages(prev => [...prev, { role: "ai", text: `错误：${chunk.error}` }]);
-                break;
-              }
-              if (chunk.is_completed) {
-                setFinished(true);
-                break;
-              }
-              if (chunk.token) {
-                setStreamingQ(prev => prev + chunk.token);
-              }
-              if (chunk.question) {
-                // 流式完成：先插入对上一回答的反馈，再更新当前问题区域
-                const finalQ = chunk.question;
-                if (chunk.feedback) {
-                  setMessages(prev => [...prev, { role: "ai", text: chunk.feedback, feedback: chunk.feedback }]);
+          for (const line of lines) {
+            if (line.startsWith("data: ")) {
+              try {
+                const chunk = JSON.parse(line.slice(6));
+                if (chunk.error) {
+                  setMessages(prev => [...prev, { role: "ai", text: `错误：${chunk.error}` }]);
+                  return true;
                 }
-                setStreamingQ("");
-                setCurrentQ(finalQ);
-                setCurrentIdx(chunk.question_index);
-              }
-            } catch {}
+                if (chunk.is_completed) {
+                  setFinished(true);
+                  return true;
+                }
+                if (chunk.token) {
+                  setStreamingQ(prev => prev + chunk.token);
+                }
+                if (chunk.question) {
+                  // 流式完成：先插入对上一回答的反馈，再更新当前问题区域
+                  const finalQ = chunk.question;
+                  if (chunk.feedback) {
+                    setMessages(prev => [...prev, { role: "ai", text: chunk.feedback, feedback: chunk.feedback }]);
+                  }
+                  setStreamingQ("");
+                  setCurrentQ(finalQ);
+                  setCurrentIdx(chunk.question_index);
+                }
+              } catch {}
+            }
           }
         }
+        return true;
+      } catch (e) {
+        // 流中断：重试前同步服务端状态，避免重复提交同一答案
+        if (attempt < 2) {
+          try {
+            const snap = await api.get<any>("/interviews/" + id);
+            const answers = (snap.answers_given || []) as QARecord[];
+            const answered = answers.find((x: QARecord) => x.index === currentIdx + 1);
+            if (answered) {
+              // 服务端已处理该答案：恢复状态，不重发
+              const qs = (snap.questions_asked || []) as QARecord[];
+              const lastQ = qs.find((x: QARecord) => x.index === currentIdx + 1);
+              if (lastQ) {
+                if (snap.feedback && lastQ.question) {
+                  // 反馈已在首次请求中展示（本地乐观渲染），仅更新当前问题
+                }
+                setStreamingQ("");
+                setCurrentQ(lastQ.question);
+                setCurrentIdx(currentIdx + 1);
+                setTotal(snap.total_questions);
+              }
+              if (snap.status === "completed") setFinished(true);
+              return true;
+            }
+          } catch {}
+          // 服务端尚未处理：短暂等待后重试
+          await new Promise(r => setTimeout(r, 1000));
+          return submitWithRetry(attempt + 1);
+        }
+        setMessages(prev => [...prev, { role: "ai", text: "网络不稳定，回答未送达，请重试。" }]);
+        return false;
       }
-    } catch (e: any) {
-      setMessages(prev => [...prev, { role: "ai", text: "抱歉，处理你的回答时出现了问题，请重试。" }]);
+    };
+
+    try {
+      await submitWithRetry(0);
     } finally {
       setSending(false);
     }
