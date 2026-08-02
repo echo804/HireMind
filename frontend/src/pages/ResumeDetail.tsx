@@ -370,56 +370,127 @@ export default function ResumeDetail() {
         </div>
 
         {diagnosis && (
-          <div className="border-t border-line pt-4 mb-4">
-            <div className="flex items-center gap-3 mb-4">
-              <span className="text-3xl font-bold text-brand-600">{diagnosis.overall_score}</span>
-              <div>
-                <p className="text-sm font-medium text-ink">{diagnosis.verdict || "综合评估"}</p>
-                {diagnosis.llm_extra && (
-                  <span className="text-xs px-2 py-0.5 rounded-full bg-purple-100 text-purple-700">含大模型岗加试</span>
-                )}
-              </div>
-            </div>
-            {(diagnosis.dimensions || []).map((d: any) => (
-              <div key={d.key} className="mb-3">
-                <div className="flex items-center justify-between mb-1">
-                  <span className="text-sm font-medium text-ink">{d.name}</span>
-                  <span className={`text-xs px-2 py-0.5 rounded-full ${d.score >= 70 ? "bg-green-100 text-green-700" : d.score >= 50 ? "bg-amber-100 text-amber-700" : "bg-red-100 text-red-700"}`}>
-                    {d.score}/100
+          <div className="border-t border-line pt-5 mt-1">
+            {/* 总览卡片 */}
+            <div className="bg-gradient-to-br from-brand-50 to-white border border-brand-100 rounded-2xl p-5 mb-5 flex items-center gap-5">
+              <RingScore score={diagnosis.overall_score || 0} />
+              <div className="flex-1 min-w-0">
+                <div className="flex items-center gap-2 mb-2 flex-wrap">
+                  {(() => {
+                    const g = GRADE_MAP.find(g => (diagnosis.overall_score || 0) >= g.min) || GRADE_MAP[2];
+                    return <span className={`text-xs px-2.5 py-1 rounded-full font-medium ${g.cls}`}>{g.label}</span>;
+                  })()}
+                  {diagnosis.llm_extra && (
+                    <span className="text-xs px-2.5 py-1 rounded-full bg-purple-100 text-purple-700 font-medium">含大模型岗加试</span>
+                  )}
+                </div>
+                <p className="text-sm text-ink leading-relaxed">{diagnosis.verdict || "综合评估"}</p>
+                <div className="flex gap-4 mt-2 text-xs text-ink-muted flex-wrap">
+                  <span>📊 {(diagnosis.dimensions || []).length} 个维度</span>
+                  <span>⭐ {(diagnosis.highlights || []).length} 处高亮</span>
+                  <span className={((diagnosis.red_flags || []).length > 0 ? "text-red-500" : "")}>
+                    🚩 {(diagnosis.red_flags || []).length} 条红线
                   </span>
                 </div>
-                <div className="w-full bg-surface-muted rounded-full h-2 overflow-hidden">
-                  <div className={`h-2 rounded-full ${d.score >= 70 ? "bg-green-500" : d.score >= 50 ? "bg-amber-500" : "bg-red-500"}`}
-                    style={{ width: `${d.score}%` }} />
+              </div>
+            </div>
+
+            {/* 维度分组 */}
+            {["general", "llm"].map(group => {
+              const dims = (diagnosis.dimensions || []).filter((d: any) => dimensionGroup(d) === group);
+              if (dims.length === 0) return null;
+              const avg = Math.round(dims.reduce((s: number, d: any) => s + (d.score || 0), 0) / dims.length);
+              return (
+                <div key={group} className="mb-5">
+                  <div className="flex items-center justify-between mb-2.5">
+                    <h4 className="text-sm font-semibold text-ink">{groupNames[group]}</h4>
+                    <span className={`text-xs px-2 py-0.5 rounded-full ${scoreBadgeCls(avg)}`}>
+                      组均分 {avg}
+                    </span>
+                  </div>
+                  <div className="space-y-2">
+                    {dims.map((d: any) => {
+                      const passed = (d.score || 0) >= 70;
+                      return (
+                        <details key={d.key} className="group bg-white border border-line rounded-xl overflow-hidden" open={!passed}>
+                          <summary className="flex items-center gap-3 px-4 py-3 cursor-pointer select-none list-none [&::-webkit-details-marker]:hidden">
+                            <span className={`w-6 h-6 rounded-full flex items-center justify-center text-xs shrink-0 ${
+                              passed ? "bg-green-100 text-green-600" : "bg-red-100 text-red-500"
+                            }`}>
+                              {passed ? "✓" : "!"}
+                            </span>
+                            <span className="flex-1 text-sm font-medium text-ink">{d.name}</span>
+                            <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${scoreBadgeCls(d.score || 0)}`}>
+                              {d.score}/100
+                            </span>
+                            <svg className={`w-4 h-4 text-ink-muted transition-transform group-open:rotate-180`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                              <path strokeLinecap="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+                            </svg>
+                          </summary>
+                          <div className="px-4 pb-4">
+                            <div className="w-full bg-surface-muted rounded-full h-1.5 mb-3 overflow-hidden">
+                              <div className={`h-1.5 rounded-full ${barCls(d.score || 0)}`} style={{ width: `${Math.min(100, d.score || 0)}%` }} />
+                            </div>
+                            {(d.issues || []).length > 0 && (
+                              <div className="mb-3">
+                                <p className="text-xs font-medium text-red-600 mb-1">存在的问题</p>
+                                <ul className="space-y-1">
+                                  {d.issues.map((issue: string, i: number) => (
+                                    <li key={i} className="flex gap-2 text-xs text-ink-secondary leading-relaxed">
+                                      <span className="text-red-400 shrink-0">•</span>{issue}
+                                    </li>
+                                  ))}
+                                </ul>
+                              </div>
+                            )}
+                            {(d.suggestions || []).length > 0 && (
+                              <div>
+                                <p className="text-xs font-medium text-brand-600 mb-1">改进建议</p>
+                                <ul className="space-y-1">
+                                  {d.suggestions.map((s: string, i: number) => (
+                                    <li key={i} className="flex gap-2 text-xs text-ink-secondary leading-relaxed">
+                                      <span className="text-brand-400 shrink-0">→</span>{s}
+                                    </li>
+                                  ))}
+                                </ul>
+                              </div>
+                            )}
+                          </div>
+                        </details>
+                      );
+                    })}
+                  </div>
                 </div>
-                {(d.issues || []).length > 0 && (
-                  <ul className="mt-1 list-disc list-inside text-xs text-red-600 space-y-0.5">
-                    {d.issues.map((issue: string, i: number) => <li key={i}>{issue}</li>)}
+              );
+            })}
+
+            {/* 红线与高亮 */}
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              {(diagnosis.red_flags || []).length > 0 && (
+                <div className="bg-red-50 border border-red-200 rounded-xl p-4">
+                  <p className="text-sm font-semibold text-red-700 mb-2">🚩 淘汰红线</p>
+                  <ul className="space-y-1.5">
+                    {diagnosis.red_flags.map((f: string, i: number) => (
+                      <li key={i} className="flex gap-2 text-xs text-red-600 leading-relaxed">
+                        <span className="shrink-0">•</span>{f}
+                      </li>
+                    ))}
                   </ul>
-                )}
-                {(d.suggestions || []).length > 0 && (
-                  <ul className="mt-1 list-disc list-inside text-xs text-brand-600 space-y-0.5">
-                    {d.suggestions.map((s: string, i: number) => <li key={i}>{s}</li>)}
+                </div>
+              )}
+              {(diagnosis.highlights || []).length > 0 && (
+                <div className="bg-green-50 border border-green-200 rounded-xl p-4">
+                  <p className="text-sm font-semibold text-green-700 mb-2">⭐ 高亮时刻</p>
+                  <ul className="space-y-1.5">
+                    {diagnosis.highlights.map((h: string, i: number) => (
+                      <li key={i} className="flex gap-2 text-xs text-green-700 leading-relaxed">
+                        <span className="shrink-0">•</span>{h}
+                      </li>
+                    ))}
                   </ul>
-                )}
-              </div>
-            ))}
-            {(diagnosis.red_flags || []).length > 0 && (
-              <div className="bg-red-50 border border-red-200 rounded-lg p-3 mt-3">
-                <p className="text-xs font-medium text-red-700 mb-1">🚩 淘汰红线</p>
-                {diagnosis.red_flags.map((f: string, i: number) => (
-                  <p key={i} className="text-xs text-red-600">• {f}</p>
-                ))}
-              </div>
-            )}
-            {(diagnosis.highlights || []).length > 0 && (
-              <div className="bg-green-50 border border-green-200 rounded-lg p-3 mt-3">
-                <p className="text-xs font-medium text-green-700 mb-1">⭐ 高亮时刻</p>
-                {diagnosis.highlights.map((h: string, i: number) => (
-                  <p key={i} className="text-xs text-green-700">• {h}</p>
-                ))}
-              </div>
-            )}
+                </div>
+              )}
+            </div>
           </div>
         )}
 
@@ -488,4 +559,50 @@ function Step({ done, active, label }: { done?: boolean; active?: boolean; label
       </span>
     </div>
   );
+}
+
+/* ===== AI 诊断展示组件 ===== */
+
+function RingScore({ score }: { score: number }) {
+  const color = score >= 80 ? "#16a34a" : score >= 60 ? "#ca8a04" : "#dc2626";
+  const circumference = 2 * Math.PI * 40;
+  const offset = circumference - (Math.min(100, Math.max(0, score)) / 100) * circumference;
+  return (
+    <div className="relative w-28 h-28 shrink-0">
+      <svg viewBox="0 0 100 100" className="w-full h-full -rotate-90">
+        <circle cx="50" cy="50" r="40" fill="none" stroke="#e5e7eb" strokeWidth="8" />
+        <circle cx="50" cy="50" r="40" fill="none" stroke={color} strokeWidth="8"
+          strokeDasharray={circumference} strokeDashoffset={offset} strokeLinecap="round" />
+      </svg>
+      <div className="absolute inset-0 flex flex-col items-center justify-center">
+        <span className="text-2xl font-bold" style={{ color }}>{score}</span>
+        <span className="text-[10px] text-ink-muted">综合得分</span>
+      </div>
+    </div>
+  );
+}
+
+const GRADE_MAP = [
+  { min: 80, label: "优秀", cls: "bg-green-100 text-green-700" },
+  { min: 60, label: "良好", cls: "bg-amber-100 text-amber-700" },
+  { min: 0, label: "待改进", cls: "bg-red-100 text-red-700" },
+];
+
+const dimensionGroup = (d: any) =>
+  (d.key || "").startsWith("llm_") ? "llm" : "general";
+
+const groupNames: Record<string, string> = {
+  general: "通用评审（面试官铁律）",
+  llm: "大模型岗加试",
+};
+
+function scoreBadgeCls(score: number) {
+  if (score >= 70) return "bg-green-100 text-green-700";
+  if (score >= 50) return "bg-amber-100 text-amber-700";
+  return "bg-red-100 text-red-700";
+}
+function barCls(score: number) {
+  if (score >= 70) return "bg-green-500";
+  if (score >= 50) return "bg-amber-500";
+  return "bg-red-500";
 }
