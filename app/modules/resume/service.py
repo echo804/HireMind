@@ -7,7 +7,7 @@ from app.modules.resume.models import ResumeEntity, ResumeStatus
 from app.modules.resume.repository import ResumeRepository
 from app.modules.resume.schemas import ResumeDetail, ResumeListItem, ResumeResponse
 from app.modules.resume.parser import parse_file
-from app.modules.resume.analyzer import analyze_resume
+from app.modules.resume.analyzer import analyze_resume, analyze_resume_quality, polish_resume_text
 from app.infrastructure.cache import cache_get, cache_set, invalidate_user_cache
 
 logger = logging.getLogger(__name__)
@@ -15,6 +15,44 @@ logger = logging.getLogger(__name__)
 ALLOWED_TYPES = {".pdf": "pdf", ".docx": "docx"}
 MAX_FILE_SIZE = 10 * 1024 * 1024
 UPLOAD_DIR = Path("./uploads/resumes")
+
+
+def _build_resume_text(e: ResumeEntity) -> str:
+    """将解析后的简历实体拼成纯文本（供 AI 诊断/润色）"""
+    parts = []
+    if e.name:
+        parts.append(f"姓名：{e.name}")
+    if e.email:
+        parts.append(f"邮箱：{e.email}")
+    if e.phone:
+        parts.append(f"电话：{e.phone}")
+    if e.position:
+        parts.append(f"目标岗位：{e.position}")
+    if e.summary:
+        parts.append(f"个人简介：{e.summary}")
+    if e.skills:
+        parts.append(f"技能：{', '.join(e.skills)}")
+    if e.experience:
+        exp_lines = []
+        for x in e.experience:
+            company = x.get("company", "") if isinstance(x, dict) else ""
+            title = x.get("title", "") if isinstance(x, dict) else ""
+            duration = x.get("duration", "") if isinstance(x, dict) else ""
+            desc = x.get("description", "") if isinstance(x, dict) else ""
+            exp_lines.append(f"- {title} @ {company}（{duration}）：{desc}")
+        if exp_lines:
+            parts.append("工作经历：\n" + "\n".join(exp_lines))
+    if e.education:
+        edu_lines = []
+        for x in e.education:
+            school = x.get("school", "") if isinstance(x, dict) else ""
+            degree = x.get("degree", "") if isinstance(x, dict) else ""
+            major = x.get("major", "") if isinstance(x, dict) else ""
+            year = x.get("year", "") if isinstance(x, dict) else ""
+            edu_lines.append(f"- {school} - {degree}（{major}, {year}）")
+        if edu_lines:
+            parts.append("教育背景：\n" + "\n".join(edu_lines))
+    return "\n".join(parts)
 
 
 class ResumeService:
@@ -234,3 +272,36 @@ class ResumeService:
             status=e.status.value if e.status else "",
             created_at=e.created_at.isoformat() if e.created_at else "",
         )
+
+    async def analyze_quality(self, user_id: str, resume_id: str) -> dict:
+        """AI 按面试官手册对简历分层诊断"""
+        entity = await self.repo.find_by_id(resume_id)
+        if not entity or str(entity.user_id) != user_id:
+            raise BusinessException(ErrorCode.RESUME_NOT_FOUND, "Resume not found")
+        text = _build_resume_text(entity)
+        if not text.strip():
+            raise BusinessException(ErrorCode.RESUME_NOT_FOUND, "简历内容为空，无法分析")
+        return await analyze_resume_quality(text, entity.position or "", user_id)
+
+    async def polish(self, user_id: str, resume_id: str) -> dict:
+        """AI 润色简历文本"""
+        entity = await self.repo.find_by_id(resume_id)
+        if not entity or str(entity.user_id) != user_id:
+            raise BusinessException(ErrorCode.RESUME_NOT_FOUND, "Resume not found")
+        text = _build_resume_text(entity)
+        if not text.strip():
+            raise BusinessException(ErrorCode.RESUME_NOT_FOUND, "简历内容为空，无法润色")
+        return await polish_resume_text(text, user_id)
+
+    async def save_polished(self, user_id: str, resume_id: str, polished_text: str) -> ResumeDetail:
+        """将润色后的简历文本保存回简历（更新 summary 与 experience 描述，保留解析结构）"""
+        entity = await self.repo.find_by_id(resume_id)
+        if not entity or str(entity.user_id) != user_id:
+            raise BusinessException(ErrorCode.RESUME_NOT_FOUND, "Resume not found")
+        if not polished_text or not polished_text.strip():
+            raise BusinessException(ErrorCode.RESUME_NOT_FOUND, "润色内容为空")
+        # 用润色文本替换 summary 字段，保留结构化字段
+        entity.summary = polished_text.strip()
+        await self.repo.save(entity)
+        await invalidate_user_cache("resume", user_id)
+        return self._to_detail(entity)

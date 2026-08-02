@@ -21,6 +21,12 @@ export default function ResumeDetail() {
   const [_error, setError] = useState<string | null>(null);
   const [_pollCount, setPollCount] = useState(0);
   const [duplicate, setDuplicate] = useState<{ duplicate_of: string; duplicate_filename: string } | null>(null);
+  // AI 诊断与润色
+  const [analyzing, setAnalyzing] = useState(false);
+  const [polishing, setPolishing] = useState(false);
+  const [savingPolished, setSavingPolished] = useState(false);
+  const [diagnosis, setDiagnosis] = useState<any>(null);
+  const [polishResult, setPolishResult] = useState<any>(null);
   // 编辑表单
   const [form, setForm] = useState({
     name: "", position: "", email: "", phone: "",
@@ -58,6 +64,64 @@ export default function ResumeDetail() {
       setError("保存失败，请重试");
     } finally {
       setSaving(false);
+    }
+  };
+
+  const handleAnalyze = async () => {
+    if (!resume || analyzing) return;
+    setAnalyzing(true);
+    try {
+      const data = await api.post<any>(`/resumes/${resume.id}/analyze`);
+      setDiagnosis(data);
+    } catch {
+      setDiagnosis({ overall_score: 0, verdict: "分析失败，请检查 AI 配置后重试", dimensions: [], highlights: [], red_flags: [], llm_extra: false });
+    } finally {
+      setAnalyzing(false);
+    }
+  };
+
+  const handlePolish = async () => {
+    if (!resume || polishing) return;
+    setPolishing(true);
+    try {
+      const data = await api.post<any>(`/resumes/${resume.id}/polish`);
+      setPolishResult(data);
+    } catch {
+      setPolishResult({ polished_text: "", changes: [], summary: "润色失败，请检查 AI 配置后重试" });
+    } finally {
+      setPolishing(false);
+    }
+  };
+
+  const handleSavePolished = async () => {
+    if (!resume || !polishResult?.polished_text || savingPolished) return;
+    setSavingPolished(true);
+    try {
+      const data = await api.post<any>(`/resumes/${resume.id}/save-polished`, { polished_text: polishResult.polished_text });
+      setResume(data);
+      setPolishResult(null);
+      setError("润色内容已保存到简历");
+      setTimeout(() => setError(null), 3000);
+    } catch {
+      setError("保存失败，请重试");
+    } finally {
+      setSavingPolished(false);
+    }
+  };
+
+  const exportResume = async (format: "txt" | "docx") => {
+    if (!resume) return;
+    try {
+      const blob = await api.download(`/resumes/${resume.id}/export?format=${format}`);
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      const name = (resume.name || "resume").replace(/\s+/g, "_");
+      a.href = url;
+      a.download = `${name}.${format}`;
+      a.click();
+      URL.revokeObjectURL(url);
+    } catch {
+      setError("导出失败，请重试");
     }
   };
 
@@ -288,6 +352,123 @@ export default function ResumeDetail() {
           ))}
         </div>
       )}
+
+      {/* AI 诊断与润色 */}
+      <div className="bg-white rounded-xl p-5 shadow-sm mt-4">
+        <div className="flex items-center justify-between mb-3">
+          <h3 className="font-semibold text-ink">AI 简历诊断与润色</h3>
+          <div className="flex gap-2">
+            <button onClick={handlePolish} disabled={polishing || analyzing}
+              className="px-4 py-2 text-sm text-white bg-violet-600 rounded-lg hover:bg-violet-700 disabled:opacity-50 transition-colors">
+              {polishing ? "润色中..." : "✨ AI 润色"}
+            </button>
+            <button onClick={handleAnalyze} disabled={analyzing || polishing}
+              className="px-4 py-2 text-sm text-white bg-brand-600 rounded-lg hover:bg-brand-700 disabled:opacity-50 transition-colors">
+              {analyzing ? "分析中..." : "🔍 AI 诊断"}
+            </button>
+          </div>
+        </div>
+
+        {diagnosis && (
+          <div className="border-t border-line pt-4 mb-4">
+            <div className="flex items-center gap-3 mb-4">
+              <span className="text-3xl font-bold text-brand-600">{diagnosis.overall_score}</span>
+              <div>
+                <p className="text-sm font-medium text-ink">{diagnosis.verdict || "综合评估"}</p>
+                {diagnosis.llm_extra && (
+                  <span className="text-xs px-2 py-0.5 rounded-full bg-purple-100 text-purple-700">含大模型岗加试</span>
+                )}
+              </div>
+            </div>
+            {(diagnosis.dimensions || []).map((d: any) => (
+              <div key={d.key} className="mb-3">
+                <div className="flex items-center justify-between mb-1">
+                  <span className="text-sm font-medium text-ink">{d.name}</span>
+                  <span className={`text-xs px-2 py-0.5 rounded-full ${d.score >= 70 ? "bg-green-100 text-green-700" : d.score >= 50 ? "bg-amber-100 text-amber-700" : "bg-red-100 text-red-700"}`}>
+                    {d.score}/100
+                  </span>
+                </div>
+                <div className="w-full bg-surface-muted rounded-full h-2 overflow-hidden">
+                  <div className={`h-2 rounded-full ${d.score >= 70 ? "bg-green-500" : d.score >= 50 ? "bg-amber-500" : "bg-red-500"}`}
+                    style={{ width: `${d.score}%` }} />
+                </div>
+                {(d.issues || []).length > 0 && (
+                  <ul className="mt-1 list-disc list-inside text-xs text-red-600 space-y-0.5">
+                    {d.issues.map((issue: string, i: number) => <li key={i}>{issue}</li>)}
+                  </ul>
+                )}
+                {(d.suggestions || []).length > 0 && (
+                  <ul className="mt-1 list-disc list-inside text-xs text-brand-600 space-y-0.5">
+                    {d.suggestions.map((s: string, i: number) => <li key={i}>{s}</li>)}
+                  </ul>
+                )}
+              </div>
+            ))}
+            {(diagnosis.red_flags || []).length > 0 && (
+              <div className="bg-red-50 border border-red-200 rounded-lg p-3 mt-3">
+                <p className="text-xs font-medium text-red-700 mb-1">🚩 淘汰红线</p>
+                {diagnosis.red_flags.map((f: string, i: number) => (
+                  <p key={i} className="text-xs text-red-600">• {f}</p>
+                ))}
+              </div>
+            )}
+            {(diagnosis.highlights || []).length > 0 && (
+              <div className="bg-green-50 border border-green-200 rounded-lg p-3 mt-3">
+                <p className="text-xs font-medium text-green-700 mb-1">⭐ 高亮时刻</p>
+                {diagnosis.highlights.map((h: string, i: number) => (
+                  <p key={i} className="text-xs text-green-700">• {h}</p>
+                ))}
+              </div>
+            )}
+          </div>
+        )}
+
+        {polishResult && (
+          <div className="border-t border-line pt-4">
+            <div className="flex items-center justify-between mb-3">
+              <h4 className="text-sm font-semibold text-ink">润色结果</h4>
+              <div className="flex gap-2">
+                <button onClick={handleSavePolished} disabled={savingPolished}
+                  className="px-3 py-1.5 text-xs text-white bg-brand-600 rounded-lg hover:bg-brand-700 disabled:opacity-50 transition-colors">
+                  {savingPolished ? "保存中..." : "保存到简历"}
+                </button>
+                <button onClick={() => exportResume("txt")}
+                  className="px-3 py-1.5 text-xs text-ink-secondary bg-surface-muted rounded-lg hover:bg-line transition-colors">
+                  导出 .txt
+                </button>
+                <button onClick={() => exportResume("docx")}
+                  className="px-3 py-1.5 text-xs text-ink-secondary bg-surface-muted rounded-lg hover:bg-line transition-colors">
+                  导出 .docx
+                </button>
+              </div>
+            </div>
+            {polishResult.summary && (
+              <p className="text-xs text-ink-muted mb-3">{polishResult.summary}</p>
+            )}
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <div className="bg-surface-muted rounded-lg p-3">
+                <p className="text-xs text-ink-muted mb-2">原文</p>
+                <p className="text-xs text-ink-secondary whitespace-pre-wrap max-h-64 overflow-y-auto">{polishResult.original || resume.summary || ""}</p>
+              </div>
+              <div className="bg-brand-50 rounded-lg p-3">
+                <p className="text-xs text-brand-600 mb-2">润色后</p>
+                <p className="text-xs text-ink-secondary whitespace-pre-wrap max-h-64 overflow-y-auto">{polishResult.polished_text}</p>
+              </div>
+            </div>
+            {(polishResult.changes || []).length > 0 && (
+              <div className="mt-3">
+                <p className="text-xs font-medium text-ink-muted mb-2">主要变更（{polishResult.changes.length} 处）</p>
+                {(polishResult.changes || []).slice(0, 5).map((c: any, i: number) => (
+                  <div key={i} className="text-xs text-ink-secondary mb-2 bg-surface-muted rounded p-2">
+                    <p><span className="text-red-500 line-through">{c.original}</span> → <span className="text-green-600">{c.polished}</span></p>
+                    <p className="text-ink-muted mt-0.5">{c.reason}</p>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+        )}
+      </div>
     </div>
   );
 }
