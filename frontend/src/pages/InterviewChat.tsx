@@ -57,6 +57,8 @@ export default function InterviewChat() {
   const [answer, setAnswer] = useState("");
   const [sending, setSending] = useState(false);
   const [skipping, setSkipping] = useState(false);
+  const [hinting, setHinting] = useState(false);
+  const [polishing, setPolishing] = useState(false);
   const [timeLeft, setTimeLeft] = useState(180);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
@@ -290,6 +292,129 @@ export default function InterviewChat() {
     }
   };
 
+  const handleHint = async () => {
+    if (hinting || !currentQ) return;
+    setHinting(true);
+    setMessages(prev => [...prev, { role: "ai", text: "💡 正在生成答题提示..." }]);
+    try {
+      let token = "";
+      try {
+        const saved = localStorage.getItem("user");
+        if (saved) token = JSON.parse(saved).token || "";
+      } catch {}
+      const response = await fetch(`/api/interviews/${id}/hint`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          ...(token ? { Authorization: `Bearer ${token}` } : {}),
+        },
+        body: JSON.stringify({}),
+      });
+      if (!response.ok) throw new Error("提示失败");
+      const reader = response.body?.getReader();
+      const decoder = new TextDecoder();
+      let buffer = "";
+      let hintText = "";
+      let placeholderRemoved = false;
+      while (reader) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        buffer += decoder.decode(value, { stream: true });
+        const lines = buffer.split("\n");
+        buffer = lines.pop() || "";
+        for (const line of lines) {
+          if (!line.startsWith("data: ")) continue;
+          try {
+            const chunk = JSON.parse(line.slice(6));
+            if (chunk.token) {
+              if (!placeholderRemoved) {
+                setMessages(prev => prev.map(m =>
+                  m.text === "💡 正在生成答题提示..." ? { ...m, text: "" } : m
+                ));
+                placeholderRemoved = true;
+              }
+              hintText += chunk.token;
+              setMessages(prev => {
+                const next = [...prev];
+                const last = next[next.length - 1];
+                if (last && last.role === "ai" && last.text.startsWith("💡")) {
+                  next[next.length - 1] = { ...last, text: last.text + chunk.token };
+                }
+                return next;
+              });
+            }
+            if (chunk.hint && chunk.hint.length > hintText.length) {
+              hintText = chunk.hint;
+            }
+          } catch {}
+        }
+      }
+      if (hintText) {
+        setMessages(prev => {
+          const next = [...prev];
+          const last = next[next.length - 1];
+          if (last && last.role === "ai" && last.text.startsWith("💡")) {
+            next[next.length - 1] = { ...last, text: "💡 答题提示：\n" + hintText };
+          }
+          return next;
+        });
+      }
+    } catch {
+      setMessages(prev => [...prev, { role: "ai", text: "提示生成失败，请直接回答或跳过。" }]);
+    } finally {
+      setHinting(false);
+    }
+  };
+
+  const handlePolish = async () => {
+    if (polishing || !answer.trim()) return;
+    setPolishing(true);
+    try {
+      let token = "";
+      try {
+        const saved = localStorage.getItem("user");
+        if (saved) token = JSON.parse(saved).token || "";
+      } catch {}
+      const response = await fetch(`/api/interviews/${id}/polish`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          ...(token ? { Authorization: `Bearer ${token}` } : {}),
+        },
+        body: JSON.stringify({ answer }),
+      });
+      if (!response.ok) throw new Error("润色失败");
+      const reader = response.body?.getReader();
+      const decoder = new TextDecoder();
+      let buffer = "";
+      let polished = "";
+      while (reader) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        buffer += decoder.decode(value, { stream: true });
+        const lines = buffer.split("\n");
+        buffer = lines.pop() || "";
+        for (const line of lines) {
+          if (!line.startsWith("data: ")) continue;
+          try {
+            const chunk = JSON.parse(line.slice(6));
+            if (chunk.polished) polished = chunk.polished;
+          } catch {}
+        }
+      }
+      if (polished) {
+        setAnswer(polished);
+        setMessages(prev => [...prev, { role: "ai", text: "✨ 已润色你的回答，请检查后发送。" }]);
+      } else {
+        setMessages(prev => [...prev, { role: "ai", text: "润色失败，请重试。" }]);
+      }
+    } catch {
+      setMessages(prev => [...prev, { role: "ai", text: "润色失败，请重试。" }]);
+    } finally {
+      setPolishing(false);
+    }
+  };
+
   const handleEnd = async () => {
     setEndConfirm(false);
     setEnding(true);
@@ -424,6 +549,18 @@ export default function InterviewChat() {
             {ending ? "处理中..." : "结束面试"}
           </button>
         </div>
+      </div>
+
+      <div className="flex items-center gap-2 mb-2">
+        <button onClick={handleHint} disabled={hinting || !currentQ || sending}
+          className="text-xs px-3 py-1.5 bg-amber-50 text-amber-700 border border-amber-200 rounded-lg hover:bg-amber-100 disabled:opacity-50 transition-colors">
+          {hinting ? "生成中..." : "💡 请求提示"}
+        </button>
+        <button onClick={handlePolish} disabled={polishing || !answer.trim() || sending}
+          className="text-xs px-3 py-1.5 bg-violet-50 text-violet-700 border border-violet-200 rounded-lg hover:bg-violet-100 disabled:opacity-50 transition-colors">
+          {polishing ? "润色中..." : "✨ 润色回答"}
+        </button>
+        <span className="text-xs text-ink-muted">💡 提示不会计入回答，润色后可检查再发送</span>
       </div>
 
       <div className="flex items-end gap-2">

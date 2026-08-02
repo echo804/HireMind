@@ -11,7 +11,10 @@ from app.modules.interview.schemas import (
     CreateInterviewRequest, AnswerRequest, InterviewSessionResponse,
     InterviewListItem, NextQuestionResponse, ReportResponse,
 )
-from app.modules.interview.agent import generate_question, generate_question_stream, evaluate_interview
+from app.modules.interview.agent import (
+    generate_question, generate_question_stream, evaluate_interview,
+    generate_hint, polish_answer as polish_answer_ai,
+)
 from app.modules.resume.repository import ResumeRepository
 from app.modules.knowledgebase.service import KnowledgeService
 
@@ -390,6 +393,44 @@ class InterviewService:
             "skipped": True,
             "session_id": str(session.id),
         }
+
+    async def hint_question(self, session_id: str):
+        """给当前问题生成答题提示（流式返回纯文本）"""
+        session = await self.repo.find_by_id(uuid.UUID(session_id))
+        if not session:
+            raise BusinessException(ErrorCode.INTERVIEW_SESSION_NOT_FOUND)
+        if session.status != InterviewStatus.IN_PROGRESS:
+            raise BusinessException(ErrorCode.INTERVIEW_ALREADY_COMPLETED)
+        questions = session.questions_asked or []
+        if not questions:
+            yield {"hint": "请先等待面试官提问。"}
+            return
+        current_q = questions[-1].get("question", "")
+        try:
+            hint = await generate_hint(settings, session.direction, current_q,
+                                       user_id=str(session.user_id),
+                                       interview_style=session.interview_style or "warm")
+            for char in hint:
+                yield {"token": char}
+            yield {"hint": hint}
+        except Exception as e:
+            logger.error(f"generate_hint failed: {e}")
+            yield {"hint": "（提示生成失败，请直接回答或换一题）"}
+
+    async def polish_answer(self, session_id: str, answer: str):
+        """润色候选人的回答（一次性返回）"""
+        session = await self.repo.find_by_id(uuid.UUID(session_id))
+        if not session:
+            raise BusinessException(ErrorCode.INTERVIEW_SESSION_NOT_FOUND)
+        questions = session.questions_asked or []
+        current_q = questions[-1].get("question", "") if questions else ""
+        try:
+            polished = await polish_answer_ai(settings, current_q, answer,
+                                              user_id=str(session.user_id))
+            yield {"polished": polished}
+        except Exception as e:
+            logger.error(f"polish_answer failed: {e}")
+            yield {"polished": answer, "error": "润色失败，已返回原回答"}
 
     async def end_session(self, session_id: str) -> InterviewSessionResponse:
         session = await self.repo.find_by_id(uuid.UUID(session_id))

@@ -229,6 +229,62 @@ def _parse_question_json(content: str) -> dict:
         return {"question": "请介绍一下你的技术栈和项目经验", "feedback": "", "is_final": False, "evaluation": 5}
 
 
+HINT_PROMPT = f"""当前日期：{NOW}
+你是一名资深技术面试官，正在面试一位{{direction}}方向的候选人。当前问题是：
+「{{question}}」
+
+请给候选人提供**答题提示**（不要直接给出完整答案）：
+1. 先点出本题考察的核心知识点/能力点
+2. 给出 2-3 条思考方向或回答框架（如"可以先说背景，再说方案，最后总结"）
+3. 若是技术题，可提示关键概念名称，但不展开具体实现
+4. 语气与面试风格（{{interview_style}}）一致
+
+返回纯文本提示（200 字以内），不要用 JSON。
+"""
+
+
+POLISH_PROMPT = f"""当前日期：{NOW}
+你是一名资深面试辅导专家。候选人针对面试题「{{question}}」给出了如下回答：
+
+---
+{{answer}}
+---
+
+请在不改变事实的前提下润色这段回答，使其：
+1. 结构更清晰：可适当分段或用序号（先说结论/思路，再展开）
+2. 表达更专业：用词准确，去掉口语化、重复、模糊表达
+3. 更有说服力：突出技术决策的理由与结果
+4. 保留原意与技术细节，不编造内容
+
+只返回润色后的回答正文，不要加任何前缀说明（不要写"润色后："），不要用 JSON。
+"""
+
+
+async def generate_hint(settings, direction: str, question: str, user_id: str | None = None,
+                        interview_style: str = "warm") -> str:
+    """给当前问题生成答题提示（流式）"""
+    llm = _get_llm(settings, user_id)
+    if not llm:
+        return "（无法连接AI服务）"
+    prompt = ChatPromptTemplate.from_template(HINT_PROMPT)
+    chain = prompt | llm
+    result = await chain.ainvoke({
+        "direction": direction, "question": question, "interview_style": interview_style,
+    })
+    return (result.content or "").strip()
+
+
+async def polish_answer(settings, question: str, answer: str, user_id: str | None = None) -> str:
+    """润色候选人的回答（一次性返回）"""
+    llm = _get_llm(settings, user_id)
+    if not llm:
+        return answer
+    prompt = ChatPromptTemplate.from_template(POLISH_PROMPT)
+    chain = prompt | llm
+    result = await chain.ainvoke({"question": question, "answer": answer})
+    return (result.content or answer).strip()
+
+
 async def evaluate_interview(settings, direction: str, transcript: list[dict],
                             user_id: str | None = None) -> dict:
     llm = _get_llm(settings, user_id)
