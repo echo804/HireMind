@@ -58,6 +58,7 @@ export default function InterviewChat() {
   const [sending, setSending] = useState(false);
   const [skipping, setSkipping] = useState(false);
   const [hinting, setHinting] = useState(false);
+  const [hintModal, setHintModal] = useState<string | null>(null);
   const [polishing, setPolishing] = useState(false);
   const [timeLeft, setTimeLeft] = useState(180);
   const [loading, setLoading] = useState(true);
@@ -295,7 +296,6 @@ export default function InterviewChat() {
   const handleHint = async () => {
     if (hinting || !currentQ) return;
     setHinting(true);
-    setMessages(prev => [...prev, { role: "ai", text: "💡 正在生成答题提示..." }]);
     try {
       let token = "";
       try {
@@ -315,7 +315,6 @@ export default function InterviewChat() {
       const decoder = new TextDecoder();
       let buffer = "";
       let hintText = "";
-      let placeholderRemoved = false;
       while (reader) {
         const { done, value } = await reader.read();
         if (done) break;
@@ -326,41 +325,17 @@ export default function InterviewChat() {
           if (!line.startsWith("data: ")) continue;
           try {
             const chunk = JSON.parse(line.slice(6));
-            if (chunk.token) {
-              if (!placeholderRemoved) {
-                setMessages(prev => prev.map(m =>
-                  m.text === "💡 正在生成答题提示..." ? { ...m, text: "" } : m
-                ));
-                placeholderRemoved = true;
-              }
-              hintText += chunk.token;
-              setMessages(prev => {
-                const next = [...prev];
-                const last = next[next.length - 1];
-                if (last && last.role === "ai" && last.text.startsWith("💡")) {
-                  next[next.length - 1] = { ...last, text: last.text + chunk.token };
-                }
-                return next;
-              });
-            }
+            if (chunk.token) hintText += chunk.token;
             if (chunk.hint && chunk.hint.length > hintText.length) {
               hintText = chunk.hint;
             }
           } catch {}
         }
       }
-      if (hintText) {
-        setMessages(prev => {
-          const next = [...prev];
-          const last = next[next.length - 1];
-          if (last && last.role === "ai" && last.text.startsWith("💡")) {
-            next[next.length - 1] = { ...last, text: "💡 答题提示：\n" + hintText };
-          }
-          return next;
-        });
-      }
+      // 提示展示在独立弹窗中，不写入对话流
+      setHintModal(hintText || "（提示生成失败，请直接回答或跳过）");
     } catch {
-      setMessages(prev => [...prev, { role: "ai", text: "提示生成失败，请直接回答或跳过。" }]);
+      setHintModal("提示生成失败，请直接回答或跳过。");
     } finally {
       setHinting(false);
     }
@@ -596,6 +571,25 @@ export default function InterviewChat() {
         onConfirm={handleEnd}
         onCancel={() => setEndConfirm(false)}
       />
+
+      {/* 答题提示弹窗 */}
+      {hintModal !== null && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40" onClick={() => setHintModal(null)}>
+          <div className="bg-white rounded-xl shadow-xl p-6 w-[480px] max-h-[70vh] flex flex-col" onClick={e => e.stopPropagation()}>
+            <div className="flex items-center justify-between mb-3">
+              <h3 className="text-lg font-semibold text-ink">💡 答题提示</h3>
+              <button onClick={() => setHintModal(null)} className="text-ink-muted hover:text-ink text-xl leading-none">×</button>
+            </div>
+            <div className="overflow-y-auto text-sm text-ink-secondary whitespace-pre-wrap leading-relaxed">{hintModal}</div>
+            <div className="flex justify-end mt-4">
+              <button onClick={() => setHintModal(null)}
+                className="px-4 py-2 text-sm text-white bg-brand-600 rounded-lg hover:bg-brand-700 transition-colors">
+                知道了
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
