@@ -7,6 +7,8 @@ class Settings(BaseSettings):
     """App config loaded from .env file"""
     model_config = SettingsConfigDict(env_file=".env", env_file_encoding="utf-8", extra="ignore")
 
+    APP_ENV: str = "dev"  # dev / prod：dev 开启 /docs，prod 关闭
+
     AI_BAILIAN_API_KEY: str = ""
     AI_BAILIAN_BASE_URL: str = "https://dashscope.aliyuncs.com/compatible-mode/v1"
     DEEPSEEK_API_KEY: str = ""

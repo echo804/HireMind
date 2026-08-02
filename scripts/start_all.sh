@@ -27,14 +27,14 @@ source .venv/bin/activate
 
 # 4. 后端
 pkill -f "uvicorn app.main" 2>/dev/null || true
-nohup uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload > /tmp/hiremind_backend.log 2>&1 &
+nohup uvicorn app.main:app --host 127.0.0.1 --port 8000 --reload > /tmp/hiremind_backend.log 2>&1 &
 echo "[OK] 后端已启动 (PID: $!)"
 sleep 2
 
 # 5. 前端
 cd frontend
 pkill -f "node.*vite" 2>/dev/null || true
-setsid bash -c './node_modules/.bin/vite --host 0.0.0.0 --port 5173 &>/tmp/vite.log &' &
+setsid bash -c './node_modules/.bin/vite --host 127.0.0.1 --port 5173 &>/tmp/vite.log &' &
 sleep 3
 echo "[OK] 前端已启动"
 

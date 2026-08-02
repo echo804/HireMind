@@ -8,6 +8,7 @@ from fastapi.staticfiles import StaticFiles
 
 from app.common.exception.handlers import register_exception_handlers
 from app.common.model.base import Base
+from app.config.settings import settings
 from app.infrastructure.database import engine
 from app.infrastructure.redis import close_redis, init_redis
 from app.modules.auth.router import router as auth_router
@@ -27,7 +28,15 @@ async def lifespan(app: FastAPI):
     await close_redis()
 
 
-app = FastAPI(title="HireMind", description="AI Interview Platform API", version="0.1.0", lifespan=lifespan)
+# 生产环境（APP_ENV=prod）关闭 Swagger/OpenAPI 文档，避免暴露接口清单
+_is_dev = settings.APP_ENV != "prod"
+app = FastAPI(
+    title="HireMind", description="AI Interview Platform API", version="0.1.0",
+    lifespan=lifespan,
+    docs_url="/docs" if _is_dev else None,
+    redoc_url="/redoc" if _is_dev else None,
+    openapi_url="/openapi.json" if _is_dev else None,
+)
 
 app.add_middleware(CORSMiddleware, allow_origins=["http://localhost:5173","http://localhost:3000"],
                    allow_credentials=True, allow_methods=["*"], allow_headers=["*"])
