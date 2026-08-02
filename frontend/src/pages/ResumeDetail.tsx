@@ -92,15 +92,15 @@ export default function ResumeDetail() {
     }
   };
 
-  const handleExport = async () => {
+  const handleExport = async (format: "docx" | "pdf") => {
     if (!resume || !polishResult?.polished_text) return;
     try {
-      const blob = await api.postBlob(`/resumes/${resume.id}/export`, { polished_text: polishResult.polished_text });
+      const blob = await api.postBlob(`/resumes/${resume.id}/export`, { polished_text: polishResult.polished_text, format });
       const url = URL.createObjectURL(blob);
       const a = document.createElement("a");
       const name = (resume.name || "resume").replace(/\s+/g, "_");
       a.href = url;
-      a.download = `${name}.docx`;
+      a.download = `${name}.${format}`;
       a.click();
       URL.revokeObjectURL(url);
     } catch {
@@ -537,9 +537,13 @@ export default function ResumeDetail() {
             <div className="flex items-center justify-between mb-3">
               <h4 className="text-sm font-semibold text-ink">润色结果</h4>
               <div className="flex gap-2">
-                <button onClick={handleExport} disabled={!polishResult?.polished_text}
+                <button onClick={() => handleExport("docx")} disabled={!polishResult?.polished_text}
                   className="px-4 py-2 text-sm text-white bg-brand-600 rounded-lg hover:bg-brand-700 disabled:opacity-50 transition-colors">
                   📄 导出 .docx
+                </button>
+                <button onClick={() => handleExport("pdf")} disabled={!polishResult?.polished_text}
+                  className="px-4 py-2 text-sm text-white bg-red-600 rounded-lg hover:bg-red-700 disabled:opacity-50 transition-colors">
+                  📕 导出 .pdf
                 </button>
               </div>
             </div>
