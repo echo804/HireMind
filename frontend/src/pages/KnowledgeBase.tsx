@@ -25,7 +25,7 @@ interface SearchResult {
 }
 
 import { CardSkeleton } from "../components/Skeleton";
-import { FileText, FileType2, File as FileIcon, UploadCloud, RefreshCw, Search as SearchIcon, Database, Layers, HardDrive, CheckCircle2, X } from "lucide-react";
+import { FileText, FileType2, File as FileIcon, UploadCloud, RefreshCw, Search as SearchIcon, Database, Layers, HardDrive, CheckCircle2, X, Sparkles, BookOpen } from "lucide-react";
 
 const CATEGORIES: Record<string, string> = {
   agent: "AI Agent",
@@ -62,6 +62,9 @@ export default function KnowledgeBase() {
   const [searchQuery, setSearchQuery] = useState("");
   const [searchedQuery, setSearchedQuery] = useState("");
   const [searchResults, setSearchResults] = useState<SearchResult[]>([]);
+  const [qaQuestion, setQaQuestion] = useState("");
+  const [qaAnswer, setQaAnswer] = useState<{ answer: string; sources: SearchResult[] } | null>(null);
+  const [qaLoading, setQaLoading] = useState(false);
   const [searching, setSearching] = useState(false);
   const [deleteTarget, setDeleteTarget] = useState<string | null>(null);
   const [deleting, setDeleting] = useState(false);
@@ -169,6 +172,24 @@ export default function KnowledgeBase() {
     }
   };
 
+  const handleQA = async () => {
+    if (!qaQuestion.trim() || qaLoading) return;
+    setQaLoading(true);
+    try {
+      const data = await api.post<any>("/knowledge/qa", { question: qaQuestion.trim(), top_k: 3 });
+      setQaAnswer(data || { answer: "", sources: [] });
+    } catch (e: any) {
+      toast(e.message || "问答失败", "error");
+    } finally {
+      setQaLoading(false);
+    }
+  };
+
+  const clearQA = () => {
+    setQaQuestion("");
+    setQaAnswer(null);
+  };
+
   const formatSize = (bytes: number) => {
     if (bytes < 1024) return bytes + " B";
     if (bytes < 1024 * 1024) return (bytes / 1024).toFixed(1) + " KB";
@@ -247,6 +268,56 @@ export default function KnowledgeBase() {
         </label>
         {uploadQueue.length > 0 && (
           <p className="text-xs text-brand-600 mt-2">正在后台处理：{uploadQueue.join("、")}，处理完成自动刷新</p>
+        )}
+      </div>
+
+      {/* AI 问答 */}
+      <div className="bg-white rounded-xl shadow-sm p-4 mb-6 border-t-4 border-t-brand-500">
+        <div className="flex items-center gap-2 mb-3">
+          <Sparkles className="w-4 h-4 text-brand-500" />
+          <h3 className="text-sm font-semibold text-ink">AI 知识库问答</h3>
+          <span className="text-xs text-ink-muted">基于检索到的文档内容回答，附来源引用</span>
+        </div>
+        <div className="flex gap-3">
+          <input value={qaQuestion} onChange={(e) => setQaQuestion(e.target.value)}
+            onKeyDown={(e) => e.key === "Enter" && handleQA()}
+            placeholder="向知识库提问，例如：什么是 RAG？"
+            className="flex-1 px-3 py-2 border border-line rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-brand-500" />
+          <button onClick={handleQA} disabled={qaLoading || !qaQuestion.trim()}
+            className="px-4 py-2 bg-brand-600 text-white text-sm font-medium rounded-lg hover:bg-brand-700 disabled:opacity-50 transition-colors">
+            {qaLoading ? "思考中..." : "提问"}
+          </button>
+          {qaAnswer && (
+            <button onClick={clearQA} className="px-3 py-2 text-sm text-ink-secondary bg-surface-muted rounded-lg hover:bg-surface-muted transition-colors">
+              清空
+            </button>
+          )}
+        </div>
+        {qaLoading && (
+          <div className="mt-3 flex items-center gap-2 text-sm text-ink-muted">
+            <RefreshCw className="w-4 h-4 animate-spin text-brand-500" />
+            AI 正在检索知识库并生成回答...
+          </div>
+        )}
+        {qaAnswer && !qaLoading && (
+          <div className="mt-4 border-t border-line pt-4">
+            <p className="text-sm text-ink leading-relaxed whitespace-pre-wrap">{qaAnswer.answer}</p>
+            {qaAnswer.sources.length > 0 && (
+              <div className="mt-3">
+                <p className="text-xs font-medium text-ink-muted mb-2 flex items-center gap-1">
+                  <BookOpen className="w-3.5 h-3.5" /> 引用来源（{qaAnswer.sources.length} 个切片）
+                </p>
+                <div className="flex flex-wrap gap-2">
+                  {qaAnswer.sources.map((s, i) => (
+                    <Link key={i} to={`/knowledge-base/${s.document_id}?chunk=${s.chunk_index}`}
+                      className="text-xs px-2 py-1 rounded-lg bg-brand-50 text-brand-600 hover:bg-brand-100 transition-colors">
+                      {s.document_name} · 片段 {s.chunk_index + 1}
+                    </Link>
+                  ))}
+                </div>
+              </div>
+            )}
+          </div>
         )}
       </div>
 

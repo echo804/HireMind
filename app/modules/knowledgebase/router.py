@@ -7,7 +7,7 @@ from app.common.exception.error_code import ErrorCode
 from app.common.exception.handlers import BusinessException
 from app.common.auth.deps import get_current_user_dev
 from app.infrastructure.database import get_db
-from app.modules.knowledgebase.schemas import KnowledgeDocResponse, KnowledgeSearchRequest, KnowledgeSearchResult
+from app.modules.knowledgebase.schemas import KnowledgeDocResponse, KnowledgeSearchRequest, KnowledgeSearchResult, KnowledgeQARequest
 from app.modules.knowledgebase.service import KnowledgeService
 
 router = APIRouter(prefix="/api/knowledge", tags=["Knowledge Base"])
@@ -87,4 +87,15 @@ async def search_knowledge(
 ) -> Result[list[KnowledgeSearchResult]]:
     service = KnowledgeService(db)
     result = await service.search(req.query, req.top_k, str(user_id))
+    return Result.success(result)
+
+
+@router.post("/qa")
+async def qa_knowledge(
+    req: KnowledgeQARequest,
+    db: AsyncSession = Depends(get_db),
+    user_id: uuid.UUID = Depends(get_current_user_dev),
+):
+    service = KnowledgeService(db)
+    result = await service.qa_answer(str(user_id), req.question, req.top_k)
     return Result.success(result)

@@ -291,3 +291,59 @@ class KnowledgeService:
         result = [{"content": r[0], "chunk_index": r[1], "score": float(r[2]), "document_name": r[3], "chunk_id": str(r[4]), "document_id": str(r[5])} for r in rows]
         await cache_set("kb", "search", cache_key, data=result, ttl=300)
         return result
+
+    async def qa_answer(self, user_id: str, question: str, top_k: int = 3) -> dict:
+        """基于知识库检索的问答：检索相关切片 → 拼上下文 → LLM 生成答案（标注来源）"""
+        results = await self.search(question, top_k, user_id)
+        if not results:
+            return {
+                "answer": "知识库中暂时没有与这个问题相关的内容。请先上传相关文档，或换个问法试试。",
+                "sources": [],
+            }
+
+        from app.config.settings import settings as s
+        from app.modules.interview.agent import _get_llm
+        llm = _get_llm(s, user_id)
+        if not llm:
+            return {
+                "answer": "AI 服务未配置或不可用，请先在系统设置中配置有效的 API Key。",
+                "sources": [
+                    {"document_name": r["document_name"], "chunk_index": r["chunk_index"], "content": r["content"], "score": r["score"], "document_id": r["document_id"], "chunk_id": r["chunk_id"]}
+                    for r in results
+                ],
+            }
+
+        # 拼接检索到的切片作为上下文
+        context_parts = []
+        for i, r in enumerate(results, 1):
+            context_parts.append(f"[片段{i} 来自《{r['document_name']}》]\n{r['content']}")
+        context = "\n\n".join(context_parts)
+        doc_names = "、".join(dict.fromkeys(r["document_name"] for r in results))
+
+        prompt = f"""你是一名知识库问答助手。请仅根据下面提供的知识库内容回答用户问题。
+
+## 知识库内容
+{context}
+
+## 用户问题
+{question}
+
+回答要求：
+1. 只依据上述知识库内容回答，不要编造知识库中不存在的信息；若内容不足以回答，如实说明
+2. 回答用中文，条理清晰，可适当分点
+3. 回答末尾标注引用的来源：\u3010来源: {doc_names}\u3011
+"""
+        try:
+            resp = await llm.ainvoke(prompt)
+            answer = resp.content if hasattr(resp, "content") else str(resp)
+        except Exception as e:
+            logger.error(f"QA LLM call failed: {e}")
+            answer = f"AI 生成回答时出错：{e}"
+
+        return {
+            "answer": answer,
+            "sources": [
+                {"document_name": r["document_name"], "chunk_index": r["chunk_index"], "content": r["content"], "score": r["score"], "document_id": r["document_id"], "chunk_id": r["chunk_id"]}
+                for r in results
+            ],
+        }

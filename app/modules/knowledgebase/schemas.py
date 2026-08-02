@@ -20,6 +20,11 @@ class KnowledgeSearchRequest(BaseModel):
     top_k: int = 3
 
 
+class KnowledgeQARequest(BaseModel):
+    question: str
+    top_k: int = 3
+
+
 class KnowledgeSearchResult(BaseModel):
     content: str
     document_name: str
