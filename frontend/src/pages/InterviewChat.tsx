@@ -52,8 +52,12 @@ export default function InterviewChat() {
   const [streamingQ, setStreamingQ] = useState("");
   const [currentIdx, setCurrentIdx] = useState(0);
   const [total, setTotal] = useState(0);
+  const [lastEval, setLastEval] = useState<number | null>(null);
+  const [difficulty, setDifficulty] = useState("normal");
   const [answer, setAnswer] = useState("");
   const [sending, setSending] = useState(false);
+  const [skipping, setSkipping] = useState(false);
+  const [timeLeft, setTimeLeft] = useState(180);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [finished, setFinished] = useState(false);
@@ -94,6 +98,21 @@ export default function InterviewChat() {
   useEffect(() => {
     chatEnd.current?.scrollIntoView({ behavior: "smooth" });
   }, [messages, currentQ, streamingQ]);
+
+  // 每题计时器：新问题出现时重置 180s，倒计时到 0 提示
+  useEffect(() => {
+    setTimeLeft(180);
+    const timer = setInterval(() => {
+      setTimeLeft(prev => {
+        if (prev <= 1) {
+          clearInterval(timer);
+          return 0;
+        }
+        return prev - 1;
+      });
+    }, 1000);
+    return () => clearInterval(timer);
+  }, [currentQ, currentIdx]);
 
   const handleSubmit = async () => {
     if (!answer.trim() || sending) return;
@@ -171,6 +190,8 @@ export default function InterviewChat() {
                   setStreamingQ("");
                   setCurrentQ(finalQ);
                   setCurrentIdx(chunk.question_index);
+                  if (typeof chunk.evaluation === "number") setLastEval(chunk.evaluation);
+                  if (chunk.difficulty) setDifficulty(chunk.difficulty);
                 }
               } catch {}
             }
@@ -214,6 +235,58 @@ export default function InterviewChat() {
       await submitWithRetry(0);
     } finally {
       setSending(false);
+    }
+  };
+
+  const handleSkip = async () => {
+    if (skipping || sending) return;
+    setSkipping(true);
+    setCurrentQ("");
+    setStreamingQ("");
+    try {
+      let token = "";
+      try {
+        const saved = localStorage.getItem("user");
+        if (saved) token = JSON.parse(saved).token || "";
+      } catch {}
+      const response = await fetch(`/api/interviews/${id}/skip`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          ...(token ? { Authorization: `Bearer ${token}` } : {}),
+        },
+        body: JSON.stringify({}),
+      });
+      if (!response.ok) throw new Error("跳过失败");
+      const reader = response.body?.getReader();
+      const decoder = new TextDecoder();
+      let buffer = "";
+      while (reader) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        buffer += decoder.decode(value, { stream: true });
+        const lines = buffer.split("\n");
+        buffer = lines.pop() || "";
+        for (const line of lines) {
+          if (!line.startsWith("data: ")) continue;
+          try {
+            const chunk = JSON.parse(line.slice(6));
+            if (chunk.error) { setMessages(prev => [...prev, { role: "ai", text: `错误：${chunk.error}` }]); break; }
+            if (chunk.token) setStreamingQ(prev => prev + chunk.token);
+            if (chunk.question) {
+              setMessages(prev => [...prev, { role: "ai", text: chunk.feedback || "你跳过了上一题。" }]);
+              setStreamingQ("");
+              setCurrentQ(chunk.question);
+              setCurrentIdx(chunk.question_index);
+              if (chunk.difficulty) setDifficulty(chunk.difficulty);
+            }
+          } catch {}
+        }
+      }
+    } catch {
+      setMessages(prev => [...prev, { role: "ai", text: "跳过失败，请重试。" }]);
+    } finally {
+      setSkipping(false);
     }
   };
 
@@ -326,11 +399,31 @@ export default function InterviewChat() {
       </div>
 
       <div className="flex items-center justify-between mb-2">
-        <span className="text-xs text-ink-muted">进度：{currentIdx}/{total}</span>
-        <button onClick={() => setEndConfirm(true)} disabled={ending}
-          className="text-xs text-red-400 hover:text-red-600">
-          {ending ? "处理中..." : "结束面试"}
-        </button>
+        <div className="flex items-center gap-3">
+          <span className="text-xs text-ink-muted">进度：{currentIdx}/{total}</span>
+          <span className={`text-xs px-2 py-0.5 rounded-full ${difficulty === "hard" ? "bg-red-100 text-red-700" : difficulty === "easy" ? "bg-green-100 text-green-700" : "bg-blue-100 text-blue-700"}`}>
+            {difficulty === "hard" ? "进阶" : difficulty === "easy" ? "基础" : "标准"}
+          </span>
+          {lastEval !== null && (
+            <span className="text-xs px-2 py-0.5 rounded-full bg-amber-100 text-amber-700">上题得分 {lastEval}/10</span>
+          )}
+          {timeLeft > 0 && timeLeft < 180 && (
+            <span className={`text-xs ${timeLeft <= 30 ? "text-red-500 font-medium" : "text-ink-muted"}`}>
+              ⏱ {Math.floor(timeLeft / 60)}:{String(timeLeft % 60).padStart(2, "0")}
+            </span>
+          )}
+          {timeLeft === 0 && <span className="text-xs text-red-500 font-medium">时间到，请尽快回答或跳过</span>}
+        </div>
+        <div className="flex items-center gap-3">
+          <button onClick={handleSkip} disabled={skipping || sending || !currentQ}
+            className="text-xs px-3 py-1.5 bg-surface-muted text-ink-secondary rounded-lg hover:bg-line disabled:opacity-50 transition-colors">
+            {skipping ? "跳转中..." : "跳过此题"}
+          </button>
+          <button onClick={() => setEndConfirm(true)} disabled={ending}
+            className="text-xs text-red-400 hover:text-red-600">
+            {ending ? "处理中..." : "结束面试"}
+          </button>
+        </div>
       </div>
 
       <div className="flex items-end gap-2">
@@ -354,6 +447,9 @@ export default function InterviewChat() {
         >
           {sending ? "发送中..." : "发送"}
         </button>
+      </div>
+      <div className="flex justify-end mt-1">
+        <span className="text-xs text-ink-muted">已输入 {answer.length} 字</span>
       </div>
 
       <ConfirmDialog

@@ -125,6 +125,7 @@ class InterviewService:
             "index": session.current_question,
             "question": current_q.get("question", ""),
             "answer": req.answer,
+            "evaluation": current_q.get("evaluation", 5),
         }
         answers = list(session.answers_given or [])
         answers.append(answer_entry)
@@ -200,6 +201,7 @@ class InterviewService:
             "index": session.current_question,
             "question": current_q.get("question", ""),
             "answer": req.answer,
+            "evaluation": current_q.get("evaluation", 5),
         }
         answers = list(session.answers_given or [])
         answers.append(answer_entry)
@@ -231,6 +233,13 @@ class InterviewService:
 
         next_idx = session.current_question + 1
         question_text = ""
+        # 难度自适应：根据已答题目 evaluation 均值调整下一题难度
+        prev_evals = [a.get("evaluation") for a in answers if isinstance(a.get("evaluation"), (int, float))]
+        if prev_evals:
+            avg = sum(prev_evals) / len(prev_evals)
+            difficulty = "hard" if avg >= 7 else ("easy" if avg < 4 else "normal")
+        else:
+            difficulty = "normal"
         try:
             async for chunk in generate_question_stream(
                 settings, session.direction, session.total_questions,
@@ -238,6 +247,7 @@ class InterviewService:
                 resume_context=resume_context,
                 knowledge_context=knowledge_context,
                 user_id=str(session.user_id),
+                difficulty=difficulty,
             ):
                 if "token" in chunk:
                     question_text += chunk["token"]
@@ -256,6 +266,8 @@ class InterviewService:
                         "total": session.total_questions,
                         "question": question_entry["question"],
                         "feedback": q_data.get("feedback", ""),
+                        "evaluation": q_data.get("evaluation", 5),
+                        "difficulty": difficulty,
                         "session_id": str(session.id),
                     }
                     return
@@ -278,6 +290,96 @@ class InterviewService:
             "total": session.total_questions,
             "question": question_text,
             "feedback": "",
+            "evaluation": 5,
+            "difficulty": difficulty,
+            "session_id": str(session.id),
+        }
+
+    async def skip_question(self, session_id: str):
+        """跳过当前题：不记录答案，直接生成下一题（流式）"""
+        session = await self.repo.find_by_id(uuid.UUID(session_id))
+        if not session:
+            yield {"error": "面试会话不存在"}
+            return
+        if session.status != InterviewStatus.IN_PROGRESS:
+            yield {"error": "面试已结束"}
+            return
+
+        # 加载简历上下文
+        resume_context = ""
+        if session.resume_id:
+            resume_entity = await self.resume_repo.find_by_id(session.resume_id)
+            if resume_entity:
+                resume_context = _build_resume_context(resume_entity)
+
+        knowledge_context = ""
+        if session.use_knowledge:
+            knowledge_context = await self._build_knowledge_context(
+                session.direction, str(session.user_id))
+
+        answers = list(session.answers_given or [])
+        next_idx = session.current_question + 1
+        question_text = ""
+        # 难度自适应（同 answer_stream）
+        prev_evals = [a.get("evaluation") for a in answers if isinstance(a.get("evaluation"), (int, float))]
+        if prev_evals:
+            avg = sum(prev_evals) / len(prev_evals)
+            difficulty = "hard" if avg >= 7 else ("easy" if avg < 4 else "normal")
+        else:
+            difficulty = "normal"
+        try:
+            async for chunk in generate_question_stream(
+                settings, session.direction, session.total_questions,
+                session.current_question, answers,
+                resume_context=resume_context,
+                knowledge_context=knowledge_context,
+                user_id=str(session.user_id),
+                difficulty=difficulty,
+            ):
+                if "token" in chunk:
+                    question_text += chunk["token"]
+                    yield {"token": chunk["token"]}
+                elif "question" in chunk:
+                    q_data = chunk
+                    question_entry = {"index": next_idx, "question": q_data.get("question", question_text),
+                                      "skipped": True}
+                    questions = list(session.questions_asked or [])
+                    questions.append(question_entry)
+                    session.questions_asked = questions
+                    session.current_question = next_idx
+                    await self.repo.save(session)
+                    yield {
+                        "question_index": next_idx,
+                        "total": session.total_questions,
+                        "question": question_entry["question"],
+                        "feedback": "你跳过了上一题，继续下一题。",
+                        "evaluation": q_data.get("evaluation", 5),
+                        "difficulty": difficulty,
+                        "skipped": True,
+                        "session_id": str(session.id),
+                    }
+                    return
+        except Exception as e:
+            logger.error(f"skip_question failed: {e}")
+            fallback = f"请回答第{next_idx}题"
+            question_text = fallback
+            for char in fallback:
+                yield {"token": char}
+
+        question_entry = {"index": next_idx, "question": question_text, "skipped": True}
+        questions = list(session.questions_asked or [])
+        questions.append(question_entry)
+        session.questions_asked = questions
+        session.current_question = next_idx
+        await self.repo.save(session)
+        yield {
+            "question_index": next_idx,
+            "total": session.total_questions,
+            "question": question_text,
+            "feedback": "你跳过了上一题，继续下一题。",
+            "evaluation": 5,
+            "difficulty": difficulty,
+            "skipped": True,
             "session_id": str(session.id),
         }
 

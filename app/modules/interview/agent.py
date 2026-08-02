@@ -39,7 +39,12 @@ SYSTEM_PROMPT = f"""当前日期：{NOW}
    - 若回答有误或片面：明确指出错误原因（结合正确原理），给出正确结果或改进方向，措辞专业、不打击候选人，再继续提问
    - 反馈要有信息量，不要空泛的"很好/不错"
 6. 若题目/反馈参考了知识库内容，须在 question 末尾标注「[来源: 文档名]」（多个来源用顿号分隔），未引用则不标注
-7. 到达第 {{total}} 题时 is_final=true
+7. 根据当前难度等级（{{difficulty}}）调整本题深度：
+   - easy：基础概念与理解，考察是否掌握核心定义与简单应用
+   - normal：原理与应用，考察机制理解与常见场景实践
+   - hard：深入原理与综合设计，考察底层实现、权衡取舍、复杂场景设计
+8. 用 evaluation 字段（0-10 分）评估候选人**上一题回答**的质量（首题可为 5），供难度调整参考
+9. 到达第 {{total}} 题时 is_final=true
 
 ## 参考：候选人已使用技术栈
 {{tech_stack}}
@@ -129,7 +134,7 @@ def _get_llm(settings, user_id: str | None = None):
 
 async def generate_question(settings, direction: str, total: int, question_count: int,
                             history: list[dict], resume_context: str = "", knowledge_context: str = "",
-                            user_id: str | None = None) -> dict:
+                            user_id: str | None = None, difficulty: str = "normal") -> dict:
     llm = _get_llm(settings, user_id)
     if not llm:
         return {"question": "无法连接AI服务", "feedback": "", "is_final": False, "evaluation": "0"}
@@ -153,6 +158,7 @@ async def generate_question(settings, direction: str, total: int, question_count
         "question_count": question_count,
         "history": history_text,
         "tech_stack": tech_stack,
+        "difficulty": difficulty,
     })
 
     return _parse_question_json(result.content)
@@ -160,7 +166,7 @@ async def generate_question(settings, direction: str, total: int, question_count
 
 async def generate_question_stream(settings, direction: str, total: int, question_count: int,
                                    history: list[dict], resume_context: str = "", knowledge_context: str = "",
-                                   user_id: str | None = None):
+                                   user_id: str | None = None, difficulty: str = "normal"):
     """流式生成面试问题，逐 token yield 问题文本，最后 yield 完整的解析结果"""
     llm = _get_llm(settings, user_id)
     if not llm:
@@ -187,6 +193,7 @@ async def generate_question_stream(settings, direction: str, total: int, questio
         "question_count": question_count,
         "history": history_text,
         "tech_stack": tech_stack,
+        "difficulty": difficulty,
     }):
         token = chunk.content if hasattr(chunk, 'content') else str(chunk)
         full_content += token

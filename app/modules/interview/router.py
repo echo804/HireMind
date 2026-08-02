@@ -53,6 +53,20 @@ async def end_interview(
     return Result.success(result)
 
 
+@router.post("/{session_id}/skip")
+async def skip_interview_question(
+    session_id: str,
+    db: AsyncSession = Depends(get_db),
+    user_id: uuid.UUID = Depends(get_current_user_dev),
+):
+    """跳过当前题，流式生成下一题"""
+    async def event_stream():
+        service = InterviewService(db)
+        async for chunk in service.skip_question(session_id):
+            yield f"data: {json.dumps(chunk, ensure_ascii=False)}\n\n"
+    return StreamingResponse(event_stream(), media_type="text/event-stream")
+
+
 @router.delete("/{session_id}")
 async def delete_interview(
     session_id: str,
