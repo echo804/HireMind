@@ -18,7 +18,9 @@ UPLOAD_DIR = Path("./uploads/resumes")
 
 
 def _build_resume_text(e: ResumeEntity) -> str:
-    """将解析后的简历实体拼成纯文本（供 AI 诊断/润色）"""
+    """将简历转成纯文本（供 AI 诊断/润色）：优先用解析出的原始全文，缺失时回退结构化重建"""
+    if e.raw_text and e.raw_text.strip():
+        return e.raw_text.strip()
     parts = []
     if e.name:
         parts.append(f"姓名：{e.name}")
@@ -112,6 +114,7 @@ class ResumeService:
             await self.repo.save(entity)
 
             text, content_hash = parse_file(str(save_path))
+            entity.raw_text = text
             entity.progress = 30
             await self.repo.save(entity)
 

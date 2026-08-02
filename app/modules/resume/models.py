@@ -31,6 +31,7 @@ class ResumeEntity(BaseModel):
     experience: Mapped[list | None] = mapped_column(JSONB, nullable=True)
     education: Mapped[list | None] = mapped_column(JSONB, nullable=True)
     summary: Mapped[str | None] = mapped_column(Text, nullable=True)
+    raw_text: Mapped[str | None] = mapped_column(Text, nullable=True, comment="上传文件解析出的完整原始文本（供 AI 诊断/润色）")
     score: Mapped[int | None] = mapped_column(Integer, nullable=True)
     progress: Mapped[int] = mapped_column(Integer, default=0)
 
