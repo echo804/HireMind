@@ -295,16 +295,3 @@ class ResumeService:
         if not text.strip():
             raise BusinessException(ErrorCode.RESUME_NOT_FOUND, "简历内容为空，无法润色")
         return await polish_resume_text(text, user_id)
-
-    async def save_polished(self, user_id: str, resume_id: str, polished_text: str) -> ResumeDetail:
-        """将润色后的简历文本保存回简历（更新 summary 与 experience 描述，保留解析结构）"""
-        entity = await self.repo.find_by_id(resume_id)
-        if not entity or str(entity.user_id) != user_id:
-            raise BusinessException(ErrorCode.RESUME_NOT_FOUND, "Resume not found")
-        if not polished_text or not polished_text.strip():
-            raise BusinessException(ErrorCode.RESUME_NOT_FOUND, "润色内容为空")
-        # 用润色文本替换 summary 字段，保留结构化字段
-        entity.summary = polished_text.strip()
-        await self.repo.save(entity)
-        await invalidate_user_cache("resume", user_id)
-        return self._to_detail(entity)

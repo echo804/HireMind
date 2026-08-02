@@ -98,4 +98,20 @@ export const api = {
     }
     return res.blob();
   },
+  /** POST 请求返回 Blob（导出文件用，带 token） */
+  postBlob: async (path: string, data?: unknown): Promise<Blob> => {
+    const token = getToken();
+    const res = await fetch(`${API_BASE}${path}`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        ...(token ? { Authorization: `Bearer ${token}` } : {}),
+      },
+      body: data ? JSON.stringify(data) : undefined,
+    });
+    if (!res.ok) {
+      throw new ApiError(res.status, "导出失败");
+    }
+    return res.blob();
+  },
 };

@@ -24,7 +24,6 @@ export default function ResumeDetail() {
   // AI 诊断与润色
   const [analyzing, setAnalyzing] = useState(false);
   const [polishing, setPolishing] = useState(false);
-  const [savingPolished, setSavingPolished] = useState(false);
   const [diagnosis, setDiagnosis] = useState<any>(null);
   const [polishResult, setPolishResult] = useState<any>(null);
   // 编辑表单
@@ -93,31 +92,15 @@ export default function ResumeDetail() {
     }
   };
 
-  const handleSavePolished = async () => {
-    if (!resume || !polishResult?.polished_text || savingPolished) return;
-    setSavingPolished(true);
+  const handleExport = async () => {
+    if (!resume || !polishResult?.polished_text) return;
     try {
-      const data = await api.post<any>(`/resumes/${resume.id}/save-polished`, { polished_text: polishResult.polished_text });
-      setResume(data);
-      setPolishResult(null);
-      setError("润色内容已保存到简历");
-      setTimeout(() => setError(null), 3000);
-    } catch {
-      setError("保存失败，请重试");
-    } finally {
-      setSavingPolished(false);
-    }
-  };
-
-  const exportResume = async (format: "txt" | "docx") => {
-    if (!resume) return;
-    try {
-      const blob = await api.download(`/resumes/${resume.id}/export?format=${format}`);
+      const blob = await api.postBlob(`/resumes/${resume.id}/export`, { polished_text: polishResult.polished_text });
       const url = URL.createObjectURL(blob);
       const a = document.createElement("a");
       const name = (resume.name || "resume").replace(/\s+/g, "_");
       a.href = url;
-      a.download = `${name}.${format}`;
+      a.download = `${name}.docx`;
       a.click();
       URL.revokeObjectURL(url);
     } catch {
@@ -499,17 +482,9 @@ export default function ResumeDetail() {
             <div className="flex items-center justify-between mb-3">
               <h4 className="text-sm font-semibold text-ink">润色结果</h4>
               <div className="flex gap-2">
-                <button onClick={handleSavePolished} disabled={savingPolished}
-                  className="px-3 py-1.5 text-xs text-white bg-brand-600 rounded-lg hover:bg-brand-700 disabled:opacity-50 transition-colors">
-                  {savingPolished ? "保存中..." : "保存到简历"}
-                </button>
-                <button onClick={() => exportResume("txt")}
-                  className="px-3 py-1.5 text-xs text-ink-secondary bg-surface-muted rounded-lg hover:bg-line transition-colors">
-                  导出 .txt
-                </button>
-                <button onClick={() => exportResume("docx")}
-                  className="px-3 py-1.5 text-xs text-ink-secondary bg-surface-muted rounded-lg hover:bg-line transition-colors">
-                  导出 .docx
+                <button onClick={handleExport} disabled={!polishResult?.polished_text}
+                  className="px-4 py-2 text-sm text-white bg-brand-600 rounded-lg hover:bg-brand-700 disabled:opacity-50 transition-colors">
+                  📄 导出 .docx
                 </button>
               </div>
             </div>
