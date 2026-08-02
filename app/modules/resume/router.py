@@ -7,7 +7,7 @@ from app.common.exception.error_code import ErrorCode
 from app.common.exception.handlers import BusinessException
 from app.common.auth.deps import get_current_user_dev
 from app.infrastructure.database import get_db
-from app.modules.resume.schemas import ResumeResponse, ResumeListItem, ResumeDetail, UpdateResumeRequest
+from app.modules.resume.schemas import ResumeResponse, ResumeListItem, ResumeDetail, UpdateResumeRequest, BatchDeleteRequest
 from app.modules.resume.service import ResumeService
 
 router = APIRouter(prefix="/api/resumes", tags=["Resumes"])
@@ -56,6 +56,28 @@ async def delete_resume(
     service = ResumeService(db)
     await service.delete_resume(str(user_id), resume_id)
     return Result.success(None)
+
+
+@router.post("/batch-delete")
+async def batch_delete_resumes(
+    req: BatchDeleteRequest,
+    db: AsyncSession = Depends(get_db),
+    user_id: uuid.UUID = Depends(get_current_user_dev),
+) -> Result[dict]:
+    service = ResumeService(db)
+    deleted = await service.batch_delete_resumes(str(user_id), req.ids)
+    return Result.success({"deleted": deleted})
+
+
+@router.get("/{resume_id}/duplicate")
+async def check_resume_duplicate(
+    resume_id: str,
+    db: AsyncSession = Depends(get_db),
+    user_id: uuid.UUID = Depends(get_current_user_dev),
+) -> Result[dict | None]:
+    service = ResumeService(db)
+    result = await service.get_duplicate(str(user_id), resume_id)
+    return Result.success(result)
 
 
 @router.put("/{resume_id}")

@@ -14,12 +14,16 @@ interface ResumeItem {
 }
 
 import { CardSkeleton } from "../components/Skeleton";
+import { Trash2 } from "lucide-react";
 
 export default function ResumeList() {
   const [resumes, setResumes] = useState<ResumeItem[]>([]);
   const [uploading, setUploading] = useState(false);
   const [loading, setLoading] = useState(true);
   const [deleteId, setDeleteId] = useState<string | null>(null);
+  const [batchDeleteOpen, setBatchDeleteOpen] = useState(false);
+  const [batchDeleting, setBatchDeleting] = useState(false);
+  const [selected, setSelected] = useState<Set<string>>(new Set());
   const [search, setSearch] = useState("");
   const navigate = useNavigate();
 
@@ -61,6 +65,31 @@ export default function ResumeList() {
     await loadResumes();
   };
 
+  const toggleSelect = (id: string) => {
+    setSelected(prev => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id); else next.add(id);
+      return next;
+    });
+  };
+
+  const toggleSelectAll = () => {
+    setSelected(prev => prev.size === resumes.length ? new Set() : new Set(resumes.map(r => r.id)));
+  };
+
+  const handleBatchDelete = async () => {
+    if (selected.size === 0) return;
+    setBatchDeleting(true);
+    try {
+      await api.post<any>("/resumes/batch-delete", { ids: Array.from(selected) });
+      setSelected(new Set());
+      setBatchDeleteOpen(false);
+      await loadResumes();
+    } finally {
+      setBatchDeleting(false);
+    }
+  };
+
   const statusBadge = (status: string, score: number | null) => {
     if (status === "done") {
       const label = score !== null ? String(score) : "?";
@@ -82,6 +111,12 @@ export default function ResumeList() {
       <div className="flex items-center justify-between mb-6">
         <h2 className="text-2xl font-bold text-ink">简历管理</h2>
         <div className="flex items-center gap-3">
+          {selected.size > 0 && (
+            <button onClick={() => setBatchDeleteOpen(true)}
+              className="flex items-center gap-1.5 px-3 py-2 text-sm text-red-500 bg-red-50 rounded-lg hover:bg-red-100 transition-colors">
+              <Trash2 className="w-4 h-4" /> 批量删除（{selected.size}）
+            </button>
+          )}
           <input
             type="text" placeholder="搜索姓名/职位..." value={search}
             onChange={e => setSearch(e.target.value)}
@@ -100,9 +135,16 @@ export default function ResumeList() {
         <div className="text-center py-12 text-ink-muted">还没有简历，点击上传按钮开始</div>
       ) : (
         <div className="grid gap-4">
+          <div className="flex items-center gap-2 px-1">
+            <input type="checkbox" checked={resumes.length > 0 && selected.size === resumes.length}
+              onChange={toggleSelectAll} className="w-4 h-4 accent-brand-600 cursor-pointer" />
+            <span className="text-xs text-ink-muted">全选（{selected.size}/{resumes.length}）</span>
+          </div>
           {resumes.map((r) => (
             <div key={r.id} className="bg-white rounded-xl p-5 shadow-sm flex items-center justify-between">
               <div className="flex items-center gap-4">
+                <input type="checkbox" checked={selected.has(r.id)} onChange={() => toggleSelect(r.id)}
+                  className="w-4 h-4 accent-brand-600 cursor-pointer" />
                 <div className="w-10 h-10 rounded-lg bg-brand-100 flex items-center justify-center text-brand-600 font-medium">
                   {r.name?.[0] || "?"}
                 </div>
@@ -130,6 +172,14 @@ export default function ResumeList() {
         message="确定要删除这份简历吗？此操作不可撤销。"
         onConfirm={handleDelete}
         onCancel={() => setDeleteId(null)}
+      />
+
+      <ConfirmDialog
+        open={batchDeleteOpen}
+        title="批量删除简历"
+        message={`确定要删除选中的 ${selected.size} 份简历吗？此操作不可撤销。`}
+        onConfirm={handleBatchDelete}
+        onCancel={() => setBatchDeleteOpen(false)}
       />
     </div>
   );

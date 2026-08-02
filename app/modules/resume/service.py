@@ -52,7 +52,8 @@ class ResumeService:
         from app.infrastructure.database import async_session_factory
         asyncio.create_task(self._process_async(async_session_factory, save_path, created.id, user_id, str(created.user_id)))
 
-        return self._to_response(created)
+        resp = self._to_response(created)
+        return resp
 
     async def _process_async(self, session_factory, save_path: Path, entity_id, user_id: str, owner_id: str):
         """独立 session 的异步处理（不受请求生命周期限制）"""
@@ -136,6 +137,42 @@ class ResumeService:
             path.unlink()
         await self.repo.delete(entity)
         await invalidate_user_cache("resume", user_id)
+
+    async def batch_delete_resumes(self, user_id: str, ids: list[str]) -> int:
+        """批量删除：逐个校验归属后删除文件与记录，返回实际删除数"""
+        deleted = 0
+        for rid in ids:
+            try:
+                await self.delete_resume(user_id, rid)
+                deleted += 1
+            except BusinessException:
+                continue  # 跳过不属于当前用户或不存在的 id
+        return deleted
+
+    async def check_duplicate(self, user_id: str, content_hash: str, exclude_id: str | None = None) -> dict | None:
+        """按 content_hash 检测同用户是否已有重复简历（精确去重，可排除自身）"""
+        if not content_hash:
+            return None
+        import sqlalchemy as sa
+        q = sa.select(ResumeEntity).where(
+            ResumeEntity.user_id == uuid.UUID(user_id),
+            ResumeEntity.content_hash == content_hash,
+            ResumeEntity.status == ResumeStatus.DONE,
+        )
+        if exclude_id:
+            q = q.where(ResumeEntity.id != uuid.UUID(exclude_id))
+        result = await self.repo.db.execute(q)
+        dup = result.scalars().first()
+        if not dup:
+            return None
+        return {"duplicate_of": str(dup.id), "duplicate_filename": dup.filename or ""}
+
+    async def get_duplicate(self, user_id: str, resume_id: str) -> dict | None:
+        """按简历的 content_hash 检测是否存在重复（详情页轮询到 done 后调用）"""
+        entity = await self.repo.find_by_id(resume_id)
+        if not entity or str(entity.user_id) != user_id:
+            raise BusinessException(ErrorCode.RESUME_NOT_FOUND, "Resume not found")
+        return await self.check_duplicate(user_id, entity.content_hash or "", exclude_id=resume_id)
 
     async def update_resume(self, user_id: str, resume_id: str, req) -> ResumeDetail:
         """简历人工校正：更新可编辑字段"""

@@ -20,6 +20,7 @@ export default function ResumeDetail() {
   const [saving, setSaving] = useState(false);
   const [_error, setError] = useState<string | null>(null);
   const [_pollCount, setPollCount] = useState(0);
+  const [duplicate, setDuplicate] = useState<{ duplicate_of: string; duplicate_filename: string } | null>(null);
   // 编辑表单
   const [form, setForm] = useState({
     name: "", position: "", email: "", phone: "",
@@ -65,6 +66,12 @@ export default function ResumeDetail() {
       setResume(data);
       if (data.status === "done" || data.status === "failed") {
         setLoading(false);
+        // 解析完成后检测重复
+        if (data.status === "done") {
+          api.get<any>(`/resumes/${id}/duplicate`).then(dup => {
+            if (dup) setDuplicate(dup);
+          }).catch(() => { /* ignore */ });
+        }
       } else {
         setPollCount(c => c + 1);
         setTimeout(poll, 1500);
@@ -147,6 +154,22 @@ export default function ResumeDetail() {
   return (
     <div>
       <Link to="/resumes" className="text-sm text-brand-600 hover:underline">&larr; 返回简历列表</Link>
+
+      {duplicate && (
+        <div className="mt-4 flex items-start gap-3 bg-amber-50 border border-amber-200 rounded-xl p-4">
+          <span className="text-amber-500 text-lg">&#9888;&#65039;</span>
+          <div>
+            <p className="text-sm font-medium text-amber-700">检测到重复简历</p>
+            <p className="text-sm text-amber-600 mt-1">
+              这份简历与已存在的
+              <Link to={"/resumes/" + duplicate.duplicate_of} className="text-amber-700 underline mx-1">
+                {duplicate.duplicate_filename}
+              </Link>
+              内容相同，可能重复上传。
+            </p>
+          </div>
+        </div>
+      )}
 
       <div className="flex items-start justify-between mt-4 mb-6">
         <div>

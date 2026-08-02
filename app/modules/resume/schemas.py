@@ -60,3 +60,15 @@ class UpdateResumeRequest(BaseModel):
     experience: list[Any] | None = None
     education: list[Any] | None = None
     summary: str | None = None
+
+
+class BatchDeleteRequest(BaseModel):
+    """批量删除简历"""
+    ids: list[str]
+
+
+class UploadResumeResponse(ResumeResponse):
+    """上传响应：含去重检测标记"""
+    duplicate: bool = False
+    duplicate_of: str | None = None
+    duplicate_filename: str | None = None
