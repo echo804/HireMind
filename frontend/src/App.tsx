@@ -12,6 +12,7 @@ import ResumeDetail from "./pages/ResumeDetail";
 import InterviewList from "./pages/InterviewList";
 import InterviewChat from "./pages/InterviewChat";
 import InterviewReport from "./pages/InterviewReport";
+import ReviewNotebook from "./pages/ReviewNotebook";
 import Settings from "./pages/Settings";
 import Schedule from "./pages/Schedule";
 import KnowledgeBase from "./pages/KnowledgeBase";
@@ -46,6 +47,7 @@ function AnimatedRoutes() {
             <Route path="/interviews" element={<InterviewList />} />
             <Route path="/interviews/:id" element={<InterviewChat />} />
             <Route path="/interviews/:id/report" element={<InterviewReport />} />
+            <Route path="/review" element={<ReviewNotebook />} />
             <Route path="/settings" element={<Settings />} />
             <Route path="/schedule" element={<Schedule />} />
             <Route path="/knowledge-base" element={<KnowledgeBase />} />

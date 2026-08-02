@@ -131,6 +131,17 @@ async def answer_question_stream(
     return StreamingResponse(event_stream(), media_type="text/event-stream")
 
 
+@router.get("/review")
+async def review_questions(
+    db: AsyncSession = Depends(get_db),
+    user_id: uuid.UUID = Depends(get_current_user_dev),
+) -> Result[list[dict]]:
+    """面试回顾本：聚合所有已完成会话的问题清单"""
+    service = InterviewService(db)
+    result = await service.review_questions(str(user_id))
+    return Result.success(result)
+
+
 @router.get("")
 async def list_interviews(
     db: AsyncSession = Depends(get_db),

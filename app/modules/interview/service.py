@@ -528,6 +528,38 @@ class InterviewService:
             question_count=s.current_question, created_at=s.created_at,
         ) for s in sessions]
 
+    async def review_questions(self, user_id: str) -> list[dict]:
+        """聚合所有已完成会话的问题清单，供面试回顾本使用"""
+        sessions = await self.repo.find_by_user(uuid.UUID(user_id))
+        items: list[dict] = []
+        for s in sessions:
+            if s.status != InterviewStatus.COMPLETED:
+                continue
+            answers = s.answers_given or []
+            report = s.report or {}
+            per_q = {p.get("index"): p for p in (report.get("per_question") or [])}
+            for a in answers:
+                if not a or a.get("skipped"):
+                    continue
+                question = (a.get("question") or "").strip()
+                answer = (a.get("answer") or "").strip()
+                if not question or not answer:
+                    continue
+                pq = per_q.get(a.get("index")) or {}
+                items.append({
+                    "session_id": str(s.id),
+                    "direction": s.direction,
+                    "index": a.get("index", 0),
+                    "question": question,
+                    "answer": answer,
+                    "score": pq.get("score"),
+                    "comment": pq.get("comment", ""),
+                    "created_at": s.created_at.isoformat() if s.created_at else None,
+                })
+        # 按时间倒序（最新在前）
+        items.sort(key=lambda x: x["created_at"] or "", reverse=True)
+        return items
+
     async def get_report(self, session_id: str) -> ReportResponse:
         session = await self.repo.find_by_id(uuid.UUID(session_id))
         if not session:

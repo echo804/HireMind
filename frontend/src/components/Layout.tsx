@@ -6,6 +6,7 @@ import { useState } from "react";
 const navItems = [
   { path: "/resumes", label: "简历管理" },
   { path: "/interviews", label: "模拟面试" },
+  { path: "/review", label: "面试回顾本" },
   { path: "/knowledge-base", label: "知识库" },
   { path: "/schedule", label: "面试日程" },
   { path: "/settings", label: "系统设置" },
