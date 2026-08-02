@@ -155,7 +155,19 @@ QUALITY_PROMPT = """当前日期：{now}
   ],
   "highlights": ["这份简历的高亮时刻1-2条"],
   "red_flags": ["淘汰红线触发项（若无则为空数组）"],
-  "llm_extra": true/false 是否叠加了大模型岗加试
+  "llm_extra": true/false 是否叠加了大模型岗加试,
+  "unreasonable_advice": [
+    {{"issue": "不合理/可疑之处（如技能写精通但项目无法佐证、时间线矛盾、无量化结果、表述夸大）", "advice": "具体修改建议"}}
+  ],
+  "project_assessment": [
+    {{
+      "name": "项目名",
+      "type": "production|course|demo",
+      "confidence": 0-100,
+      "reasons": ["判断依据1（如有无 GitHub 链接/线上地址、有无量化结果、是否只有技术栈堆砌无场景、是否从0到1但无部署说明）"],
+      "advice": "如何让该项目看起来更像真实生产项目的建议"
+    }}
+  ]
 }}
 """
 
@@ -169,17 +181,17 @@ POLISH_PROMPT = """当前日期：{now}
 ---
 
 ## 润色要求
-1. 修正错别字与技术名词大小写（如 IOS→iOS、Node.js 拼写）
-2. 将"负责/参与"等弱动词改写为强力动词（主导/设计/重构/推动），并按 STAR 法则补足情境-行动-结果
-3. 结果尽量量化（保留原文数字，不要编造）
-4. 删除套话噪音（"热爱学习、吃苦耐劳"等）与重复内容
-5. 控制篇幅在最多两页 A4 纸以内：精简冗余描述，保留最有价值的项目
-6. 保持原简历的所有事实与结构（姓名、联系方式、学历、经历、项目），不新增虚假内容
+1. 修正错别字与技术名词大小写（如 IOS→iOS、Node.js 拼写、Github→GitHub）
+2. **禁止升级事实**：不得把"熟悉"改成"精通"、不得把"参与"改成"主导"、不得给原文没有的量化数字（如成功率、耗时百分比）。技能等级、个人贡献、数字必须与原文完全一致
+3. **禁止形式主义修改**：不得仅因"更专业"而改名章节标题（如"项目介绍"→"项目概述"）、不得把原有内容重新包装成 STAR 结构却不增加信息、不得强行把纯文本改造成 Markdown 标题/列表/加粗
+4. 只允许做四类改动：①删除套话噪音与明显重复（如"热爱学习、吃苦耐劳"）②修正错别字/大小写/标点 ③精简冗余修饰语，使表达更紧凑清晰 ④把原文已有的量化结果和亮点调整到更显眼的位置
+5. 控制篇幅在最多两页 A4 纸以内：优先删冗余描述，保留最有价值的项目
+6. 保持原简历的所有事实、结构、章节名称（姓名、联系方式、学历、经历、项目、标题），不新增虚假内容，不删减真实信息
 
 ## 输出要求
 返回严格 JSON（不要 markdown 代码块）：
 {{
-  "polished_text": "润色后的完整简历文本",
+  "polished_text": "润色后的完整简历文本（结构与章节名与原文一致）",
   "changes": [
     {{"original": "原文片段", "polished": "润色后片段", "reason": "修改原因"}}
   ],
@@ -211,6 +223,8 @@ async def analyze_resume_quality(text: str, position: str = "", user_id: str | N
         parsed.setdefault("highlights", [])
         parsed.setdefault("red_flags", [])
         parsed.setdefault("llm_extra", False)
+        parsed.setdefault("unreasonable_advice", [])
+        parsed.setdefault("project_assessment", [])
         return parsed
     except Exception as e:
         logger.error(f"analyze_resume_quality failed: {e}")

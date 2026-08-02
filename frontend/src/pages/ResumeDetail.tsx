@@ -474,6 +474,61 @@ export default function ResumeDetail() {
                 </div>
               )}
             </div>
+
+            {/* 不合理之处建议 */}
+            {(diagnosis.unreasonable_advice || []).length > 0 && (
+              <div className="bg-amber-50 border border-amber-200 rounded-xl p-4 mt-4">
+                <p className="text-sm font-semibold text-amber-700 mb-2">⚠️ 不合理之处与建议</p>
+                <div className="space-y-3">
+                  {(diagnosis.unreasonable_advice || []).map((u: any, i: number) => (
+                    <div key={i} className="text-xs">
+                      <p className="text-amber-800 font-medium">• {u.issue}</p>
+                      <p className="text-amber-700 mt-0.5 pl-4">→ 建议：{u.advice}</p>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            {/* 项目真实性评估 */}
+            {(diagnosis.project_assessment || []).length > 0 && (
+              <div className="mt-4">
+                <p className="text-sm font-semibold text-ink mb-2.5">🔍 项目真实性评估</p>
+                <div className="space-y-2">
+                  {(diagnosis.project_assessment || []).map((pj: any, i: number) => (
+                    <div key={i} className="bg-white border border-line rounded-xl p-4">
+                      <div className="flex items-center justify-between mb-2">
+                        <p className="text-sm font-medium text-ink">{pj.name}</p>
+                        <div className="flex items-center gap-2">
+                          <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${
+                            pj.type === "production" ? "bg-green-100 text-green-700" :
+                            pj.type === "course" ? "bg-blue-100 text-blue-700" :
+                            "bg-red-100 text-red-700"
+                          }`}>
+                            {pj.type === "production" ? "真实生产" : pj.type === "course" ? "课程项目" : "Demo 项目"}
+                          </span>
+                          <span className="text-xs text-ink-muted">{pj.confidence}%</span>
+                        </div>
+                      </div>
+                      {(pj.reasons || []).length > 0 && (
+                        <ul className="mb-2 space-y-0.5">
+                          {pj.reasons.map((r: string, j: number) => (
+                            <li key={j} className="flex gap-2 text-xs text-ink-secondary leading-relaxed">
+                              <span className="text-ink-muted shrink-0">•</span>{r}
+                            </li>
+                          ))}
+                        </ul>
+                      )}
+                      {pj.advice && (
+                        <p className="text-xs text-brand-600 bg-brand-50 rounded-lg p-2">
+                          → 建议：{pj.advice}
+                        </p>
+                      )}
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
           </div>
         )}
 
